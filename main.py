@@ -45,7 +45,7 @@ LOG_GROUP_ID = -1003848994625  # TERI LOG GROUP ID
 REFERRAL_LINK = "t.me/Argo?start=a_WCN5PGSG"  # Referral link
 
 # MongoDB Configuration
-MONGO_URI = "mongodb+srv://tijilkumar7_db_user:UPeRM47HKvOQwcL7@cluster0.kc2grb3.mongodb.net/?appName=Cluster0"
+MONGO_URI = "mongodb+srv://bsdk:betichod@cluster0.fgj1r9z.mongodb.net/?retryWrites=true&w=majority"
 MONGO_DB_NAME = "asuna_music_bot"
 
 # Welcome image URL
