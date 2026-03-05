@@ -29,23 +29,29 @@ from telethon.tl.types import InputPeerEmpty
 import subprocess
 import json
 import psutil
+import motor.motor_asyncio
+from pymongo import MongoClient
+import certifi
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "8493611261:AAHQNQnfmZwhuVe16TDTuve7r8cqGTQmWvg"
+BOT_TOKEN = "8616457539:AAG2Fl11UO0ksRz5Kn3gC-MM8B66UqzFm7Y"
 API_ID = 30191201
 API_HASH = "5c87a8808e935cc3d97958d0bb24ff1f"
 COOKIES_FILE = "cookies.txt"
-ASSISTANT_SESSION = "1AZWarzYBuxeNnKI13x7JsXZTXeCy31Gi6eh5BxVrYej42HbFrGtwne7JZRfTcfYa3AsT7bZmR1osGsKyuMjWFTck14zLSx7mEUdd5pqwI2G8_xj1f46nrLBS8OjexYkttcHPRlrJTHdKZvN_x_W5sPlvf79MNCY4wRWN9BRNkpWExn4O8ltIwKJXbTB5i7EY65AYnAO08Kk4ksZeAJvydhvmkVMD-TtXIy8VpemKyTYA66KXrNkRe7Sh9T-VO4YulTNJvZiWR0hSi2duzQEW6LvYbk7awpAafcL0Zeu29XN-Irsj4VAwkrg9agAA0mW-mgC-UWg7bVi8584H6Xr2MNmrUWuDTxM="
+ASSISTANT_SESSION = "1AZWarzkBu2ndRKbNvLcyAra-RYy60gU1QP8HfTmxmeEmgchAJKtZ-ysIm_YjyS5sCx7Izmi5ddhVLvOx5R4xurxCiVy1E_UXAk7pI1R-RjrBm4jnJs60beOXM1KYe-zl-Mk2_dx7jpDxT2jndjhDlkpkJWR5BW9yStOsBjsNCFDEiuuIhnMc6WuXGSFZNOYGjtiIqK9sjm4xyw71kvY5hokMp6ZXdT9I5FDf0lFk7l74K_PoQQNAso8dWQhnXlofMFzaWnWF5-S9PpHhWZq_7hupJfKLN-1E22ffoIiLW-typLuE6wSYtzjmc2NLoOueO0QJEzzg7ltZTQvC3PDXqyMqSyF5buU="
 OWNER_ID = 5774811323
 UPDATES_CHANNEL = "ASUNA_XMUSIC_UPDATES"  # Bina @ ke
 LOG_GROUP_ID = -1003681145012  # TERI LOG GROUP ID
+REFERRAL_LINK = "t.me/Argo?start=a_WCN5PGSG"  # Referral link
+
+# MongoDB Configuration
+MONGO_URI = "mongodb+srv://tijilkumar7_db_user:UPeRM47HKvOQwcL7@cluster0.kc2grb3.mongodb.net/?appName=Cluster0"
+MONGO_DB_NAME = "asuna_music_bot"
 
 # Welcome image URL
 WELCOME_IMAGE_URL = "https://myimgs.org/storage/images/17832/asuna.png"
 PING_IMAGE_URL = "https://myimgs.org/storage/images/17832/asuna.png"
-
-# Database file
-DB_FILE = "bot_database.json"
+JOIN_IMAGE_URL = "https://myimgs.org/storage/images/17832/asuna.png"  # Same image for join message
 
 # ================= LOGGING =================
 logging.basicConfig(
@@ -54,134 +60,218 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ================= DATABASE CLASS =================
-class Database:
-    def __init__(self, db_file=DB_FILE):
-        self.db_file = db_file
-        self.data = self.load()
+# ================= MONGODB DATABASE CLASS =================
+class MongoDB:
+    def __init__(self, uri, db_name):
+        self.client = motor.motor_asyncio.AsyncIOMotorClient(uri, tlsCAFile=certifi.where())
+        self.db = self.client[db_name]
+        
+        # Collections
+        self.users = self.db.users
+        self.groups = self.db.groups
+        self.user_sessions = self.db.user_sessions  # Track user sessions
+        self.admins = self.db.bot_admins
+        self.stats = self.db.stats
+        
+    async def initialize(self):
+        """Initialize database with default values if empty"""
+        # Check if stats exist
+        stats = await self.stats.find_one({"_id": "main"})
+        if not stats:
+            await self.stats.insert_one({
+                "_id": "main",
+                "total_commands": 0,
+                "songs_played": 0,
+                "bot_start_time": time.time()
+            })
+        
+        # Check if admins exist
+        admins = await self.admins.find_one({"_id": "main"})
+        if not admins:
+            await self.admins.insert_one({
+                "_id": "main",
+                "admins": [OWNER_ID]
+            })
     
-    def load(self):
-        try:
-            if os.path.exists(self.db_file):
-                with open(self.db_file, 'r') as f:
-                    return json.load(f)
-            else:
-                return {
-                    "users": {},
-                    "groups": {},
-                    "bot_admins": [OWNER_ID],
-                    "stats": {
-                        "total_commands": 0,
-                        "songs_played": 0,
-                        "bot_start_time": time.time()
-                    }
-                }
-        except Exception as e:
-            logger.error(f"Database load error: {e}")
-            return {
-                "users": {},
-                "groups": {},
-                "bot_admins": [OWNER_ID],
-                "stats": {
-                    "total_commands": 0,
-                    "songs_played": 0,
-                    "bot_start_time": time.time()
-                }
-            }
-    
-    def save(self):
-        try:
-            with open(self.db_file, 'w') as f:
-                json.dump(self.data, f, indent=2)
-            return True
-        except Exception as e:
-            logger.error(f"Database save error: {e}")
-            return False
-    
-    def add_user(self, user_id, username=None, first_name=None):
+    async def add_user(self, user_id, username=None, first_name=None):
+        """Add or update user"""
         user_id = str(user_id)
         now = time.time()
         
-        if user_id not in self.data["users"]:
-            self.data["users"][user_id] = {
+        user = await self.users.find_one({"_id": user_id})
+        
+        if not user:
+            await self.users.insert_one({
+                "_id": user_id,
                 "first_seen": now,
                 "last_active": now,
                 "username": username or "",
-                "name": first_name or ""
-            }
+                "name": first_name or "",
+                "total_sessions": 1
+            })
         else:
-            self.data["users"][user_id]["last_active"] = now
+            update_data = {"last_active": now}
             if username:
-                self.data["users"][user_id]["username"] = username
+                update_data["username"] = username
             if first_name:
-                self.data["users"][user_id]["name"] = first_name
-        
-        self.save()
+                update_data["name"] = first_name
+            
+            await self.users.update_one(
+                {"_id": user_id},
+                {"$set": update_data}
+            )
     
-    def add_group(self, group_id, name=None, username=None, members_count=0):
-        group_id = str(group_id)
+    async def has_seen_start(self, user_id):
+        """Check if user has already used /start command"""
+        user_id = str(user_id)
+        session = await self.user_sessions.find_one({"_id": user_id})
+        return session is not None
+    
+    async def mark_start_seen(self, user_id):
+        """Mark that user has used /start command"""
+        user_id = str(user_id)
+        now = time.time()
         
-        if group_id not in self.data["groups"]:
-            self.data["groups"][group_id] = {
-                "added_date": time.time(),
+        session = await self.user_sessions.find_one({"_id": user_id})
+        
+        if not session:
+            await self.user_sessions.insert_one({
+                "_id": user_id,
+                "first_start": now,
+                "last_start": now,
+                "start_count": 1
+            })
+        else:
+            await self.user_sessions.update_one(
+                {"_id": user_id},
+                {
+                    "$set": {"last_start": now},
+                    "$inc": {"start_count": 1}
+                }
+            )
+    
+    async def add_group(self, group_id, name=None, username=None, members_count=0):
+        """Add or update group"""
+        group_id = str(group_id)
+        now = time.time()
+        
+        group = await self.groups.find_one({"_id": group_id})
+        
+        if not group:
+            await self.groups.insert_one({
+                "_id": group_id,
+                "added_date": now,
                 "name": name or "",
                 "username": username or "",
                 "members_count": members_count
-            }
+            })
         else:
+            update_data = {}
             if name:
-                self.data["groups"][group_id]["name"] = name
+                update_data["name"] = name
             if username:
-                self.data["groups"][group_id]["username"] = username
+                update_data["username"] = username
             if members_count:
-                self.data["groups"][group_id]["members_count"] = members_count
-        
-        self.save()
+                update_data["members_count"] = members_count
+            
+            if update_data:
+                await self.groups.update_one(
+                    {"_id": group_id},
+                    {"$set": update_data}
+                )
     
-    def remove_group(self, group_id):
+    async def remove_group(self, group_id):
+        """Remove group from database"""
         group_id = str(group_id)
-        if group_id in self.data["groups"]:
-            del self.data["groups"][group_id]
-            self.save()
-            return True
-        return False
+        result = await self.groups.delete_one({"_id": group_id})
+        return result.deleted_count > 0
     
-    def is_bot_admin(self, user_id):
-        return int(user_id) in self.data["bot_admins"] or int(user_id) == OWNER_ID
-    
-    def add_bot_admin(self, user_id):
+    async def is_bot_admin(self, user_id):
+        """Check if user is bot admin"""
         user_id = int(user_id)
-        if user_id not in self.data["bot_admins"] and user_id != OWNER_ID:
-            self.data["bot_admins"].append(user_id)
-            self.save()
+        
+        # Owner is always admin
+        if user_id == OWNER_ID:
             return True
+        
+        admins_doc = await self.admins.find_one({"_id": "main"})
+        if admins_doc and "admins" in admins_doc:
+            return user_id in admins_doc["admins"]
         return False
     
-    def remove_bot_admin(self, user_id):
+    async def add_bot_admin(self, user_id):
+        """Add bot admin"""
         user_id = int(user_id)
-        if user_id in self.data["bot_admins"] and user_id != OWNER_ID:
-            self.data["bot_admins"].remove(user_id)
-            self.save()
+        
+        if user_id == OWNER_ID:
+            return False
+        
+        admins_doc = await self.admins.find_one({"_id": "main"})
+        if not admins_doc:
+            admins_doc = {"_id": "main", "admins": []}
+        
+        if user_id not in admins_doc["admins"]:
+            admins_doc["admins"].append(user_id)
+            await self.admins.update_one(
+                {"_id": "main"},
+                {"$set": {"admins": admins_doc["admins"]}},
+                upsert=True
+            )
             return True
         return False
     
-    def get_bot_admins(self):
-        return self.data["bot_admins"]
+    async def remove_bot_admin(self, user_id):
+        """Remove bot admin"""
+        user_id = int(user_id)
+        
+        if user_id == OWNER_ID:
+            return False
+        
+        admins_doc = await self.admins.find_one({"_id": "main"})
+        if admins_doc and "admins" in admins_doc and user_id in admins_doc["admins"]:
+            admins_doc["admins"].remove(user_id)
+            await self.admins.update_one(
+                {"_id": "main"},
+                {"$set": {"admins": admins_doc["admins"]}}
+            )
+            return True
+        return False
     
-    def increment_command_count(self):
-        self.data["stats"]["total_commands"] = self.data["stats"].get("total_commands", 0) + 1
-        self.save()
+    async def get_bot_admins(self):
+        """Get all bot admins"""
+        admins_doc = await self.admins.find_one({"_id": "main"})
+        if admins_doc and "admins" in admins_doc:
+            return admins_doc["admins"]
+        return []
     
-    def increment_songs_played(self):
-        self.data["stats"]["songs_played"] = self.data["stats"].get("songs_played", 0) + 1
-        self.save()
+    async def increment_command_count(self):
+        """Increment total commands count"""
+        await self.stats.update_one(
+            {"_id": "main"},
+            {"$inc": {"total_commands": 1}}
+        )
     
-    def get_stats(self):
-        users_count = len(self.data["users"])
-        groups_count = len(self.data["groups"])
-        total_commands = self.data["stats"].get("total_commands", 0)
-        songs_played = self.data["stats"].get("songs_played", 0)
-        uptime_seconds = time.time() - self.data["stats"].get("bot_start_time", time.time())
+    async def increment_songs_played(self):
+        """Increment songs played count"""
+        await self.stats.update_one(
+            {"_id": "main"},
+            {"$inc": {"songs_played": 1}}
+        )
+    
+    async def get_stats(self):
+        """Get bot statistics"""
+        # Get counts
+        users_count = await self.users.count_documents({})
+        groups_count = await self.groups.count_documents({})
+        
+        # Get stats document
+        stats_doc = await self.stats.find_one({"_id": "main"})
+        
+        total_commands = stats_doc.get("total_commands", 0) if stats_doc else 0
+        songs_played = stats_doc.get("songs_played", 0) if stats_doc else 0
+        bot_start_time = stats_doc.get("bot_start_time", time.time()) if stats_doc else time.time()
+        
+        uptime_seconds = time.time() - bot_start_time
         uptime_str = str(timedelta(seconds=int(uptime_seconds)))
         
         return {
@@ -192,9 +282,17 @@ class Database:
             "uptime": uptime_str,
             "uptime_seconds": uptime_seconds
         }
+    
+    async def update_start_time(self):
+        """Update bot start time (called when bot starts)"""
+        await self.stats.update_one(
+            {"_id": "main"},
+            {"$set": {"bot_start_time": time.time()}},
+            upsert=True
+        )
 
-# Initialize database
-db = Database()
+# Initialize MongoDB
+db = MongoDB(MONGO_URI, MONGO_DB_NAME)
 
 # ================= LOG FUNCTION =================
 async def log_to_group(action_type, user=None, group=None, song=None, details=""):
@@ -213,6 +311,10 @@ async def log_to_group(action_type, user=None, group=None, song=None, details=""
             last_name = user.last_name if user and user.last_name else "N/A"
             lang_code = user.lang_code if user and user.lang_code else "N/A"
             
+            # Check if first time or returning
+            has_seen = await db.has_seen_start(user.id) if user else False
+            session_type = "First Time" if not has_seen else "Returning"
+            
             log_text = f"""
 **╭━━━━ ⟬ 👤 ᴜsᴇʀ sᴛᴀʀᴛᴇᴅ ʙᴏᴛ ⟭━━━━╮**
 ┃
@@ -223,6 +325,7 @@ async def log_to_group(action_type, user=None, group=None, song=None, details=""
 ┃**ғɪʀsᴛ ɴᴀᴍᴇ:** `{first_name}`
 ┃**ʟᴀsᴛ ɴᴀᴍᴇ:** `{last_name}`
 ┃**ʟᴀɴɢᴜᴀɢᴇ:** `{lang_code}`
+┃**sᴇssɪᴏɴ:** `{session_type}`
 **╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
 """
         
@@ -269,7 +372,6 @@ async def log_to_group(action_type, user=None, group=None, song=None, details=""
         logger.error(f"Failed to send log: {e}")
 
 # ================= GLOBALS =================
-BOT_ADMINS = db.get_bot_admins()
 players = {}
 call = None
 bot = None
@@ -316,7 +418,7 @@ async def get_player(chat_id):
 async def is_admin(chat_id, user_id):
     """Check if user is admin in group"""
     # Bot admins always have access
-    if db.is_bot_admin(user_id):
+    if await db.is_bot_admin(user_id):
         return True
     
     try:
@@ -334,9 +436,6 @@ async def is_admin(chat_id, user_id):
         logger.error(f"Error checking admin status: {e}")
     
     return False
-
-async def is_bot_admin(user_id):
-    return db.is_bot_admin(user_id)
 
 # ================= JOIN VOICE CHAT =================
 from telethon.tl.functions.channels import JoinChannelRequest
@@ -615,7 +714,7 @@ async def play_song(chat_id, song_info, is_video=False):
         player.paused = False
 
         # Increment songs played counter
-        db.increment_songs_played()
+        await db.increment_songs_played()
 
         # Cancel previous auto task
         if player.play_task and not player.play_task.done():
@@ -819,28 +918,56 @@ async def message_handler(event):
     
     # Add user to database
     first_name = sender.first_name if hasattr(sender, 'first_name') else getattr(sender, 'title', str(sender.id))
-    db.add_user(user_id, sender.username, first_name)
+    await db.add_user(user_id, sender.username, first_name)
     
     # Add group to database if it's a group/channel
     if event.is_group or event.is_channel:
         chat = await event.get_chat()
         members_count = getattr(chat, 'participants_count', 0)
-        db.add_group(chat_id, chat.title, getattr(chat, 'username', ''), members_count)
+        await db.add_group(chat_id, chat.title, getattr(chat, 'username', ''), members_count)
     
     # Log every command
     if text.startswith(tuple(COMMAND_PREFIXES)):
-        db.increment_command_count()
+        await db.increment_command_count()
     
     # ===== BASIC COMMANDS =====
     
-    # /start command
+    # /start command - No verification, just show join message on first time and bot on second time
     if is_command(text, "start"):
         user = await event.get_sender()
         
-        # LOG USER START
-        await log_to_group("user_start", user=user)
+        # Check if user has already used /start before
+        has_seen = await db.has_seen_start(user.id)
         
-        caption = f"""
+        if not has_seen:
+            # First time - show join channel message
+            join_caption = f"""
+**๏ ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ๏ sᴜᴘᴘᴏʀᴛ ๏ ᴄʜᴀɴɴᴇʟ ᴛᴏ ᴄʜᴇᴀᴋ ᴍʏ ғᴇᴀᴛᴜʀᴇs.**
+
+**ᴀғᴛᴇʀ ᴊᴏɪɴ ᴛʜᴇ ๏ ᴄʜᴀɴɴᴇʟ ๏ ᴄᴏᴍᴇ ʙᴀᴄᴋ ᴛᴏ ᴛʜᴇ ʙᴏᴛ ᴀɴᴅ ᴛʏᴘᴇ /start ᴀɢᴀɪɴ !!**
+            """
+            
+            buttons = [
+                [Button.url("🔰 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 🔰", REFERRAL_LINK)]
+            ]
+            
+            await event.reply(file=JOIN_IMAGE_URL, message=join_caption, buttons=buttons)
+            
+            # Mark that user has seen start
+            await db.mark_start_seen(user.id)
+            
+            # Log user start (first time)
+            await log_to_group("user_start", user=user)
+            
+            # Delete user's command message
+            try:
+                await event.message.delete()
+            except:
+                pass
+            return
+        else:
+            # Second time or more - show welcome message
+            caption = f"""
 ✨ **ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ ʙᴏᴛ** ✨
 
 ⟡➣ **ʜᴇʏ** [{get_display_name(user)}](tg://user?id={user.id}) ❤️
@@ -849,16 +976,46 @@ async def message_handler(event):
 ⟡➣ **ᴛʜᴀᴛ ᴄᴀɴ ᴘʟᴀʏ ᴍᴜsɪᴄ ᴀɴᴅ ᴠɪᴅᴇᴏ ɪɴ ᴠᴏɪᴄᴇ ᴄʜᴀᴛs.**
 
 ⟡➣ **ᴄʟɪᴄᴋ ᴏɴ ʜᴇʟᴘ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴋɴᴏᴡ ᴍᴏʀᴇ.**
+            """
+            
+            buttons = [
+                [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/god_knows_0"),
+                 Button.url("➕ 𝙰𝚍𝚍 𝙼𝚎", f"https://t.me/{(await event.client.get_me()).username}?startgroup=true")],
+                [Button.inline("⟡➣ 𝙷𝚎𝚕𝚙", data="help"),
+                 Button.url("⟡➣ 𝚄𝚙𝚍𝚊𝚝𝚎𝚜", f"https://t.me/{UPDATES_CHANNEL}")]
+            ]
+            
+            await event.reply(file=WELCOME_IMAGE_URL, message=caption, buttons=buttons)
+            
+            # Update last start time
+            await db.mark_start_seen(user.id)
+            
+            # Log user start (returning)
+            await log_to_group("user_start", user=user)
+            
+            # Delete user's command message
+            try:
+                await event.message.delete()
+            except:
+                pass
+            return
+    
+    # No verification needed for other commands - anyone can use after first /start
+    # But we still need to check if they've seen start at least once
+    has_seen = await db.has_seen_start(user_id)
+    if not has_seen and not await db.is_bot_admin(user_id):
+        # User hasn't used /start yet - show join message
+        join_caption = f"""
+**๏ ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴜsᴇ /start ғɪʀsᴛ ᴛᴏ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.**
+
+**ᴘʟᴇᴀsᴇ ᴛʏᴘᴇ /start ᴛᴏ ʙᴇɢɪɴ !!**
         """
         
         buttons = [
-            [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/god_knows_0"),
-             Button.url("➕ 𝙰𝚍𝚍 𝙼𝚎", f"https://t.me/{(await event.client.get_me()).username}?startgroup=true")],
-            [Button.inline("⟡➣ 𝙷𝚎𝚕𝚙", data="help"),
-             Button.url("⟡➣ 𝚄𝚙𝚍𝚊𝚝𝚎𝚜", f"https://t.me/{UPDATES_CHANNEL}")]
+            [Button.url("🔰 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 🔰", REFERRAL_LINK)]
         ]
         
-        await event.reply(file=WELCOME_IMAGE_URL, message=caption, buttons=buttons)
+        await event.reply(file=JOIN_IMAGE_URL, message=join_caption, buttons=buttons)
         
         # Delete user's command message
         try:
@@ -1463,7 +1620,7 @@ async def message_handler(event):
     
     # /stats command (only for bot admins)
     if is_command(text, "stats"):
-        if not db.is_bot_admin(user_id):
+        if not await db.is_bot_admin(user_id):
             reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴠɪᴇᴡ sᴛᴀᴛs!**")
             # Delete user's command
             try:
@@ -1474,7 +1631,7 @@ async def message_handler(event):
             await reply_msg.delete()
             return
         
-        stats = db.get_stats()
+        stats = await db.get_stats()
         
         # Delete user's command
         try:
@@ -1504,12 +1661,26 @@ async def callback_handler(event):
     data = event.data.decode()
     user_id = event.sender_id
     
-    if "_" in data:
+    # Check if user has used /start at least once
+    has_seen = await db.has_seen_start(user_id)
+    if not has_seen and not await db.is_bot_admin(user_id) and data not in ["help", "back_to_start"]:
+        await event.answer("ᴘʟᴇᴀsᴇ ᴜsᴇ /start ғɪʀsᴛ!", alert=True)
+        return
+    
+    if "_" in data and data not in ["help", "back_to_start"]:
         command, chat_id_str = data.split("_", 1)
         chat_id = int(chat_id_str)
     else:
-        await event.answer("Invalid data!", alert=True)
-        return
+        # Handle non-chat specific callbacks
+        if data == "help":
+            await help_callback(event)
+            return
+        elif data == "back_to_start":
+            await back_to_start(event)
+            return
+        else:
+            await event.answer("Invalid data!", alert=True)
+            return
     
     if not await is_admin(chat_id, user_id):
         await event.answer("ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ ᴅᴏ ᴛʜɪs!", alert=True)
@@ -1641,6 +1812,19 @@ async def callback_handler(event):
 # ================= HELP CALLBACK =================
 @events.register(events.CallbackQuery(data="help"))
 async def help_callback(event):
+    user_id = event.sender_id
+    has_seen = await db.has_seen_start(user_id)
+    
+    if not has_seen and not await db.is_bot_admin(user_id):
+        join_caption = f"""
+**๏ ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴜsᴇ /start ғɪʀsᴛ ᴛᴏ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.**
+
+**ᴘʟᴇᴀsᴇ ᴛʏᴘᴇ /start ᴛᴏ ʙᴇɢɪɴ !!**
+        """
+        buttons = [[Button.url("🔰 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 🔰", REFERRAL_LINK)]]
+        await event.edit(file=JOIN_IMAGE_URL, message=join_caption, buttons=buttons)
+        return
+    
     help_text = """
 **╭━━━━ ⟬ ʜᴇʟᴘ ᴍᴇɴᴜ ⟭━━━━╮**
 ┃
@@ -1675,6 +1859,19 @@ async def help_callback(event):
 @events.register(events.CallbackQuery(data="back_to_start"))
 async def back_to_start(event):
     user = await event.get_sender()
+    user_id = user.id
+    
+    has_seen = await db.has_seen_start(user_id)
+    
+    if not has_seen and not await db.is_bot_admin(user_id):
+        join_caption = f"""
+**๏ ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴜsᴇ /start ғɪʀsᴛ ᴛᴏ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.**
+
+**ᴘʟᴇᴀsᴇ ᴛʏᴘᴇ /start ᴛᴏ ʙᴇɢɪɴ !!**
+        """
+        buttons = [[Button.url("🔰 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 🔰", REFERRAL_LINK)]]
+        await event.edit(file=JOIN_IMAGE_URL, message=join_caption, buttons=buttons)
+        return
     
     caption = f"""
 ✨ **ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ ʙᴏᴛ** ✨
@@ -1712,7 +1909,7 @@ async def admin_commands(event):
     # ================= GCAST =================
     if is_command(text, "gcast"):
 
-        if not db.is_bot_admin(user_id):
+        if not await db.is_bot_admin(user_id):
             reply_msg = await event.reply("❌ You are not a bot admin!")
             await asyncio.sleep(3)
             await reply_msg.delete()
@@ -1738,9 +1935,9 @@ async def admin_commands(event):
         failed_groups = 0
 
         # ===== USERS =====
-        for user_id_str in list(db.data["users"].keys()):
+        async for user in db.users.find({}):
             try:
-                await bot.send_message(int(user_id_str), query)
+                await bot.send_message(int(user["_id"]), query)
                 sent_users += 1
                 await asyncio.sleep(0.3)
 
@@ -1749,18 +1946,14 @@ async def admin_commands(event):
 
                 error_text = str(e).lower()
 
-                # Remove blocked users
-                if "blocked" in error_text or "deactivated" in error_text:
-                    db.data["users"].pop(user_id_str, None)
-
                 # Handle flood wait
                 if "flood" in error_text:
                     await asyncio.sleep(5)
 
         # ===== GROUPS =====
-        for group_id_str in list(db.data["groups"].keys()):
+        async for group in db.groups.find({}):
             try:
-                await bot.send_message(int(group_id_str), query)
+                await bot.send_message(int(group["_id"]), query)
                 sent_groups += 1
                 await asyncio.sleep(0.5)
 
@@ -1770,12 +1963,10 @@ async def admin_commands(event):
 
                 # Remove invalid groups
                 if "not a member" in error_text or "chat not found" in error_text:
-                    db.remove_group(group_id_str)
+                    await db.remove_group(group["_id"])
 
                 if "flood" in error_text:
                     await asyncio.sleep(5)
-
-        db.save()
 
         await msg.edit(
             f"📢 Broadcast Completed\n\n"
@@ -1817,7 +2008,7 @@ async def admin_commands(event):
         
         try:
             new_admin = int(new_admin)
-            if db.add_bot_admin(new_admin):
+            if await db.add_bot_admin(new_admin):
                 msg = await event.reply(f"**✅ ᴜsᴇʀ `{new_admin}` ɪs ɴᴏᴡ ᴀ ʙᴏᴛ ᴀᴅᴍɪɴ!**")
             else:
                 msg = await event.reply("**⚠️ ᴜsᴇʀ ɪs ᴀʟʀᴇᴀᴅʏ ᴀɴ ᴀᴅᴍɪɴ ᴏʀ ɪs ᴏᴡɴᴇʀ!**")
@@ -1858,7 +2049,7 @@ async def admin_commands(event):
         
         try:
             remove_admin = int(remove_admin)
-            if db.remove_bot_admin(remove_admin):
+            if await db.remove_bot_admin(remove_admin):
                 msg = await event.reply(f"**✅ ᴜsᴇʀ `{remove_admin}` ɪs ɴᴏ ʟᴏɴɢᴇʀ ᴀ ʙᴏᴛ ᴀᴅᴍɪɴ!**")
             else:
                 msg = await event.reply("**⚠️ ᴜsᴇʀ ɪs ɴᴏᴛ ᴀɴ ᴀᴅᴍɪɴ ᴏʀ ɪs ᴏᴡɴᴇʀ!**")
@@ -1871,7 +2062,7 @@ async def admin_commands(event):
     
     # /admins command
     if is_command(text, "admins"):
-        if not db.is_bot_admin(user_id):
+        if not await db.is_bot_admin(user_id):
             reply_msg = await event.reply("**❌ ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴀ ʙᴏᴛ ᴀᴅᴍɪɴ!**")
             try:
                 await event.message.delete()
@@ -1886,13 +2077,22 @@ async def admin_commands(event):
         except:
             pass
         
+        admin_ids = await db.get_bot_admins()
+        
         text = "**👑 ʙᴏᴛ ᴀᴅᴍɪɴs ʟɪsᴛ:**\n\n"
-        for admin_id in db.get_bot_admins():
+        for admin_id in admin_ids:
             try:
                 user = await bot.get_entity(admin_id)
                 text += f"• {get_display_name(user)} (`{admin_id}`)\n"
             except:
                 text += f"• `{admin_id}`\n"
+        
+        # Add owner
+        try:
+            owner = await bot.get_entity(OWNER_ID)
+            text += f"\n👑 **ᴏᴡɴᴇʀ:** {get_display_name(owner)} (`{OWNER_ID}`)"
+        except:
+            text += f"\n👑 **ᴏᴡɴᴇʀ:** `{OWNER_ID}`"
         
         msg = await event.reply(text)
         await asyncio.sleep(10)
@@ -1906,13 +2106,19 @@ async def on_leave(event):
     if event.user_left or event.user_kicked:
         if event.user_id == (await bot.get_me()).id:
             chat = await event.get_chat()
-            db.remove_group(chat.id)
+            await db.remove_group(chat.id)
 
 # ================= MAIN FUNCTION =================
 async def main():
     global bot, assistant, call, BOT_START_TIME
     
     BOT_START_TIME = time.time()
+    
+    # Initialize MongoDB
+    logger.info("Connecting to MongoDB...")
+    await db.initialize()
+    await db.update_start_time()
+    logger.info("✅ MongoDB Connected!")
     
     bot = TelegramClient('bot', API_ID, API_HASH)
     assistant = TelegramClient(StringSession(ASSISTANT_SESSION), API_ID, API_HASH)
@@ -1936,13 +2142,12 @@ async def main():
     
     bot.add_event_handler(message_handler)
     bot.add_event_handler(callback_handler)
-    bot.add_event_handler(help_callback)
-    bot.add_event_handler(back_to_start)
     bot.add_event_handler(admin_commands)
     bot.add_event_handler(on_leave)
     
     # Log bot start
-    await log_to_group("bot_start", details=f"Bot started successfully!\nUsers: {len(db.data['users'])}\nGroups: {len(db.data['groups'])}")
+    stats = await db.get_stats()
+    await log_to_group("bot_start", details=f"Bot started successfully!\nUsers: {stats['users']}\nGroups: {stats['groups']}")
     
     logger.info("🤖 Bot is running!")
     await bot.run_until_disconnected()
@@ -1950,6 +2155,6 @@ async def main():
 # ================= RUN BOT =================
 if __name__ == "__main__":
     # Install required packages:
-    # pip install telethon pytgcalls yt-dlp pillow aiohttp psutil
+    # pip install telethon pytgcalls yt-dlp pillow aiohttp psutil motor pymongo certifi
     # Also need ffmpeg installed on system
     asyncio.run(main())
