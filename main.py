@@ -932,7 +932,7 @@ async def message_handler(event):
     
     # ===== BASIC COMMANDS =====
     
-    # /start command - No verification, just show join message on first time and bot on second time
+    # /start command
     if is_command(text, "start"):
         user = await event.get_sender()
         
@@ -999,30 +999,6 @@ async def message_handler(event):
             except:
                 pass
             return
-    
-    # No verification needed for other commands - anyone can use after first /start
-    # But we still need to check if they've seen start at least once
-    has_seen = await db.has_seen_start(user_id)
-    if not has_seen and not await db.is_bot_admin(user_id):
-        # User hasn't used /start yet - show join message
-        join_caption = f"""
-**๏ ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴜsᴇ /start ғɪʀsᴛ ᴛᴏ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.**
-
-**ᴘʟᴇᴀsᴇ ᴛʏᴘᴇ /start ᴛᴏ ʙᴇɢɪɴ !!**
-        """
-        
-        buttons = [
-            [Button.url("🔰 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 🔰", REFERRAL_LINK)]
-        ]
-        
-        await event.reply(file=JOIN_IMAGE_URL, message=join_caption, buttons=buttons)
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        return
     
     # ===== MUSIC COMMANDS =====
     
@@ -1661,12 +1637,6 @@ async def callback_handler(event):
     data = event.data.decode()
     user_id = event.sender_id
     
-    # Check if user has used /start at least once
-    has_seen = await db.has_seen_start(user_id)
-    if not has_seen and not await db.is_bot_admin(user_id) and data not in ["help", "back_to_start"]:
-        await event.answer("ᴘʟᴇᴀsᴇ ᴜsᴇ /start ғɪʀsᴛ!", alert=True)
-        return
-    
     if "_" in data and data not in ["help", "back_to_start"]:
         command, chat_id_str = data.split("_", 1)
         chat_id = int(chat_id_str)
@@ -1812,19 +1782,6 @@ async def callback_handler(event):
 # ================= HELP CALLBACK =================
 @events.register(events.CallbackQuery(data="help"))
 async def help_callback(event):
-    user_id = event.sender_id
-    has_seen = await db.has_seen_start(user_id)
-    
-    if not has_seen and not await db.is_bot_admin(user_id):
-        join_caption = f"""
-**๏ ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴜsᴇ /start ғɪʀsᴛ ᴛᴏ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.**
-
-**ᴘʟᴇᴀsᴇ ᴛʏᴘᴇ /start ᴛᴏ ʙᴇɢɪɴ !!**
-        """
-        buttons = [[Button.url("🔰 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 🔰", REFERRAL_LINK)]]
-        await event.edit(file=JOIN_IMAGE_URL, message=join_caption, buttons=buttons)
-        return
-    
     help_text = """
 **╭━━━━ ⟬ ʜᴇʟᴘ ᴍᴇɴᴜ ⟭━━━━╮**
 ┃
@@ -1859,19 +1816,6 @@ async def help_callback(event):
 @events.register(events.CallbackQuery(data="back_to_start"))
 async def back_to_start(event):
     user = await event.get_sender()
-    user_id = user.id
-    
-    has_seen = await db.has_seen_start(user_id)
-    
-    if not has_seen and not await db.is_bot_admin(user_id):
-        join_caption = f"""
-**๏ ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴜsᴇ /start ғɪʀsᴛ ᴛᴏ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.**
-
-**ᴘʟᴇᴀsᴇ ᴛʏᴘᴇ /start ᴛᴏ ʙᴇɢɪɴ !!**
-        """
-        buttons = [[Button.url("🔰 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 🔰", REFERRAL_LINK)]]
-        await event.edit(file=JOIN_IMAGE_URL, message=join_caption, buttons=buttons)
-        return
     
     caption = f"""
 ✨ **ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ ʙᴏᴛ** ✨
