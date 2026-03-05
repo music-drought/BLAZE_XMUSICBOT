@@ -8,3 +8,6 @@ pycryptodome
 numpy
 ffmpeg-python
 psutil
+motor 
+pymongo
+certifi
