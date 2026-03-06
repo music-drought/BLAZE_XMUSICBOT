@@ -1029,15 +1029,15 @@ async def get_help_menu():
     """
     
     buttons = [
-        [Button.inline("๏ 𝚂𝚘𝚗𝚐", data="help_song"),
-         Button.inline("๏ 𝙰𝚍𝚖𝚒𝚗", data="help_admin"),
-         Button.inline("๏ 𝚂𝚞𝚍𝚘", data="help_sudo")],
-        [Button.inline("๏ 𝙼𝚊𝚒𝚗𝚝𝚎𝚗𝚊𝚗𝚌𝚎", data="help_maintenance"),
-         Button.inline("๏ 𝙿𝚒𝚗𝚐", data="help_ping"),
-         Button.inline("๏ 𝚂𝚎𝚎𝚔/𝙻𝚘𝚘𝚙", data="help_seek")],
-        [Button.inline("๏ 𝙱𝚛𝚘𝚊𝚍𝚌𝚊𝚜𝚝", data="help_broadcast"),
-         Button.inline("๏ 𝙱-𝚄𝚜𝚎𝚛𝚜", data="help_busers"),
-         Button.inline("๏ 𝙱𝚊𝚌𝚔", data="back_to_start")]
+        [Button.inline("𝚂𝚘𝚗𝚐", data="help_song"),
+         Button.inline("𝙰𝚍𝚖𝚒𝚗", data="help_admin"),
+         Button.inline("𝚂𝚞𝚍𝚘", data="help_sudo")],
+        [Button.inline("𝙼𝚊𝚒𝚗𝚝𝚎𝚗𝚊𝚗𝚌𝚎", data="help_maintenance"),
+         Button.inline("𝙿𝚒𝚗𝚐", data="help_ping"),
+         Button.inline("𝚂𝚎𝚎𝚔/𝙻𝚘𝚘𝚙", data="help_seek")],
+        [Button.inline("𝙱𝚛𝚘𝚊𝚍𝚌𝚊𝚜𝚝", data="help_broadcast"),
+         Button.inline("𝙱-𝚄𝚜𝚎𝚛𝚜", data="help_busers"),]
+        [Button.inline("๏ 𝙱𝚊𝚌𝚔 ๏", data="back_to_start")]
     ]
     
     return text, buttons
@@ -1121,7 +1121,7 @@ async def message_handler(event):
             """
             
             buttons = [
-                [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/god_knows_0"),
+                [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/blaze_xs0ul"),
                  Button.url("➕ 𝙰𝚍𝚍 𝙼𝚎", f"https://t.me/{(await event.client.get_me()).username}?startgroup=true")],
                 [Button.inline("⟡➣ 𝙷𝚎𝚕𝚙", data="help_menu"),
                  Button.url("⟡➣ 𝚄𝚙𝚍𝚊𝚝𝚎𝚜", f"https://t.me/{UPDATES_CHANNEL}")]
@@ -2012,7 +2012,7 @@ async def callback_handler(event):
         """
         
         buttons = [
-            [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/god_knows_0"),
+            [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/blaze_xs0ul"),
              Button.url("➕ 𝙰𝚍𝚍 𝙼𝚎", f"https://t.me/{(await event.client.get_me()).username}?startgroup=true")],
             [Button.inline("⟡➣ 𝙷𝚎𝚕𝚙", data="help_menu"),
              Button.url("⟡➣ 𝚄𝚙𝚍𝚊𝚝𝚎𝚜", f"https://t.me/{UPDATES_CHANNEL}")]
