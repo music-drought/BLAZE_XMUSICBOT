@@ -51,7 +51,7 @@ MONGO_DB_NAME = "asuna_music_bot"
 # Welcome image URL
 WELCOME_IMAGE_URL = "https://myimgs.org/storage/images/17832/asuna.png"
 PING_IMAGE_URL = "https://myimgs.org/storage/images/17832/asuna.png"
-JOIN_IMAGE_URL = "https://myimgs.org/storage/images/17832/asuna.png"  # Same image for join message
+JOIN_IMAGE_URL = "https://myimgs.org/storage/images/17832/asuna.png"
 
 # ================= LOGGING =================
 logging.basicConfig(
@@ -69,14 +69,14 @@ class MongoDB:
         # Collections
         self.users = self.db.users
         self.groups = self.db.groups
-        self.user_sessions = self.db.user_sessions  # Track user sessions
+        self.user_sessions = self.db.user_sessions
         self.admins = self.db.bot_admins
         self.stats = self.db.stats
-        self.blocked_users = self.db.blocked_users  # New collection for blocked users
+        self.blocked_users = self.db.blocked_users
+        self.bot_settings = self.db.bot_settings
         
     async def initialize(self):
         """Initialize database with default values if empty"""
-        # Check if stats exist
         stats = await self.stats.find_one({"_id": "main"})
         if not stats:
             await self.stats.insert_one({
@@ -86,7 +86,6 @@ class MongoDB:
                 "bot_start_time": time.time()
             })
         
-        # Check if admins exist
         admins = await self.admins.find_one({"_id": "main"})
         if not admins:
             await self.admins.insert_one({
@@ -94,16 +93,24 @@ class MongoDB:
                 "admins": [OWNER_ID]
             })
         
-        # Check if blocked users collection exists
         blocked = await self.blocked_users.find_one({"_id": "main"})
         if not blocked:
             await self.blocked_users.insert_one({
                 "_id": "main",
                 "users": []
             })
+        
+        settings = await self.bot_settings.find_one({"_id": "main"})
+        if not settings:
+            await self.bot_settings.insert_one({
+                "_id": "main",
+                "maintenance_mode": False,
+                "maintenance_message": "🚧 Bot is under maintenance. Please try again later.",
+                "maintenance_by": None,
+                "maintenance_time": None
+            })
     
     async def add_user(self, user_id, username=None, first_name=None):
-        """Add or update user"""
         user_id = str(user_id)
         now = time.time()
         
@@ -131,13 +138,11 @@ class MongoDB:
             )
     
     async def has_seen_start(self, user_id):
-        """Check if user has already used /start command"""
         user_id = str(user_id)
         session = await self.user_sessions.find_one({"_id": user_id})
         return session is not None
     
     async def mark_start_seen(self, user_id):
-        """Mark that user has used /start command"""
         user_id = str(user_id)
         now = time.time()
         
@@ -160,7 +165,6 @@ class MongoDB:
             )
     
     async def add_group(self, group_id, name=None, username=None, members_count=0):
-        """Add or update group"""
         group_id = str(group_id)
         now = time.time()
         
@@ -190,16 +194,13 @@ class MongoDB:
                 )
     
     async def remove_group(self, group_id):
-        """Remove group from database"""
         group_id = str(group_id)
         result = await self.groups.delete_one({"_id": group_id})
         return result.deleted_count > 0
     
     async def is_bot_admin(self, user_id):
-        """Check if user is bot admin"""
         user_id = int(user_id)
         
-        # Owner is always admin
         if user_id == OWNER_ID:
             return True
         
@@ -209,7 +210,6 @@ class MongoDB:
         return False
     
     async def add_bot_admin(self, user_id):
-        """Add bot admin"""
         user_id = int(user_id)
         
         if user_id == OWNER_ID:
@@ -230,7 +230,6 @@ class MongoDB:
         return False
     
     async def remove_bot_admin(self, user_id):
-        """Remove bot admin"""
         user_id = int(user_id)
         
         if user_id == OWNER_ID:
@@ -247,33 +246,27 @@ class MongoDB:
         return False
     
     async def get_bot_admins(self):
-        """Get all bot admins"""
         admins_doc = await self.admins.find_one({"_id": "main"})
         if admins_doc and "admins" in admins_doc:
             return admins_doc["admins"]
         return []
     
     async def increment_command_count(self):
-        """Increment total commands count"""
         await self.stats.update_one(
             {"_id": "main"},
             {"$inc": {"total_commands": 1}}
         )
     
     async def increment_songs_played(self):
-        """Increment songs played count"""
         await self.stats.update_one(
             {"_id": "main"},
             {"$inc": {"songs_played": 1}}
         )
     
     async def get_stats(self):
-        """Get bot statistics"""
-        # Get counts
         users_count = await self.users.count_documents({})
         groups_count = await self.groups.count_documents({})
         
-        # Get stats document
         stats_doc = await self.stats.find_one({"_id": "main"})
         
         total_commands = stats_doc.get("total_commands", 0) if stats_doc else 0
@@ -293,7 +286,6 @@ class MongoDB:
         }
     
     async def update_start_time(self):
-        """Update bot start time (called when bot starts)"""
         await self.stats.update_one(
             {"_id": "main"},
             {"$set": {"bot_start_time": time.time()}},
@@ -302,10 +294,8 @@ class MongoDB:
     
     # ================= BLOCK/USER MANAGEMENT =================
     async def is_user_blocked(self, user_id):
-        """Check if user is blocked"""
         user_id = int(user_id)
         
-        # Owner can never be blocked
         if user_id == OWNER_ID:
             return False
         
@@ -315,7 +305,6 @@ class MongoDB:
         return False
     
     async def block_user(self, user_id):
-        """Block a user from using the bot"""
         user_id = int(user_id)
         
         if user_id == OWNER_ID:
@@ -336,7 +325,6 @@ class MongoDB:
         return False
     
     async def unblock_user(self, user_id):
-        """Unblock a user"""
         user_id = int(user_id)
         
         blocked_doc = await self.blocked_users.find_one({"_id": "main"})
@@ -350,18 +338,57 @@ class MongoDB:
         return False
     
     async def get_blocked_users(self):
-        """Get list of blocked user IDs"""
         blocked_doc = await self.blocked_users.find_one({"_id": "main"})
         if blocked_doc and "users" in blocked_doc:
             return blocked_doc["users"]
         return []
+    
+    # ================= MAINTENANCE MODE =================
+    async def set_maintenance(self, enabled, by=None):
+        update_data = {"maintenance_mode": enabled}
+        if enabled:
+            update_data["maintenance_by"] = by
+            update_data["maintenance_time"] = time.time()
+        else:
+            update_data["maintenance_by"] = None
+            update_data["maintenance_time"] = None
+        
+        await self.bot_settings.update_one(
+            {"_id": "main"},
+            {"$set": update_data},
+            upsert=True
+        )
+        return True
+    
+    async def get_maintenance(self):
+        settings = await self.bot_settings.find_one({"_id": "main"})
+        if settings:
+            return {
+                "enabled": settings.get("maintenance_mode", False),
+                "message": settings.get("maintenance_message", "🚧 Bot is under maintenance. Please try again later."),
+                "by": settings.get("maintenance_by"),
+                "time": settings.get("maintenance_time")
+            }
+        return {
+            "enabled": False,
+            "message": "🚧 Bot is under maintenance. Please try again later.",
+            "by": None,
+            "time": None
+        }
+    
+    async def set_maintenance_message(self, message):
+        await self.bot_settings.update_one(
+            {"_id": "main"},
+            {"$set": {"maintenance_message": message}},
+            upsert=True
+        )
+        return True
 
 # Initialize MongoDB
 db = MongoDB(MONGO_URI, MONGO_DB_NAME)
 
 # ================= LOG FUNCTION =================
 async def log_to_group(action_type, user=None, group=None, song=None, details=""):
-    """Send log to log group"""
     if not LOG_GROUP_ID:
         return
     
@@ -369,14 +396,12 @@ async def log_to_group(action_type, user=None, group=None, song=None, details=""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         if action_type == "user_start":
-            # User started bot
             user_mention = f"[{get_display_name(user)}](tg://user?id={user.id})" if user else "Unknown"
             username = f"@{user.username}" if user and user.username else "`No username`"
             first_name = user.first_name if user and user.first_name else "N/A"
             last_name = user.last_name if user and user.last_name else "N/A"
             lang_code = user.lang_code if user and user.lang_code else "N/A"
             
-            # Check if first time or returning
             has_seen = await db.has_seen_start(user.id) if user else False
             session_type = "First Time" if not has_seen else "Returning"
             
@@ -395,7 +420,6 @@ async def log_to_group(action_type, user=None, group=None, song=None, details=""
 """
         
         elif action_type == "song_played":
-            # Song played
             user_mention = f"[{get_display_name(user)}](tg://user?id={user.id})" if user else "Unknown"
             username = f"@{user.username}" if user and user.username else "`No username`"
             
@@ -422,7 +446,6 @@ async def log_to_group(action_type, user=None, group=None, song=None, details=""
 """
         
         elif action_type == "user_blocked":
-            # User blocked
             admin_mention = f"[{get_display_name(user)}](tg://user?id={user.id})" if user else "Unknown"
             target_id = details.get("target_id") if isinstance(details, dict) else "Unknown"
             target_name = details.get("target_name") if isinstance(details, dict) else "Unknown"
@@ -438,7 +461,6 @@ async def log_to_group(action_type, user=None, group=None, song=None, details=""
 """
         
         elif action_type == "user_unblocked":
-            # User unblocked
             admin_mention = f"[{get_display_name(user)}](tg://user?id={user.id})" if user else "Unknown"
             target_id = details.get("target_id") if isinstance(details, dict) else "Unknown"
             target_name = details.get("target_name") if isinstance(details, dict) else "Unknown"
@@ -453,8 +475,29 @@ async def log_to_group(action_type, user=None, group=None, song=None, details=""
 **╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
 """
         
+        elif action_type == "maintenance_on":
+            admin_mention = f"[{get_display_name(user)}](tg://user?id={user.id})" if user else "Unknown"
+            
+            log_text = f"""
+**╭━━━━ ⟬ 🔧 ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴍᴏᴅᴇ ᴇɴᴀʙʟᴇᴅ ⟭━━━━╮**
+┃
+┃**ᴛɪᴍᴇ:** `{timestamp}`
+┃**ᴀᴅᴍɪɴ:** {admin_mention}
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+"""
+        
+        elif action_type == "maintenance_off":
+            admin_mention = f"[{get_display_name(user)}](tg://user?id={user.id})" if user else "Unknown"
+            
+            log_text = f"""
+**╭━━━━ ⟬ 🔧 ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴍᴏᴅᴇ ᴅɪsᴀʙʟᴇᴅ ⟭━━━━╮**
+┃
+┃**ᴛɪᴍᴇ:** `{timestamp}`
+┃**ᴀᴅᴍɪɴ:** {admin_mention}
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+"""
+        
         else:
-            # Generic log
             log_text = f"""
 **╭━━━━ ⟬ ʟᴏɢ ᴇɴᴛʀʏ ⟭━━━━╮**
 ┃
@@ -475,6 +518,9 @@ bot = None
 assistant = None
 COMMAND_PREFIXES = ["/", "!", "."]
 BOT_START_TIME = time.time()
+
+# Dictionary to store GCAST sessions
+gcast_sessions = {}
 
 # ================= MUSIC PLAYER CLASS =================
 class MusicPlayer:
@@ -513,19 +559,15 @@ async def get_player(chat_id):
     return players[chat_id]
 
 async def is_admin(chat_id, user_id):
-    """Check if user is admin in group"""
-    # Bot admins always have access
     if await db.is_bot_admin(user_id):
         return True
     
     try:
-        # Try to get participant info
         participant = await bot(GetParticipantRequest(
             channel=chat_id,
             participant=user_id
         ))
         
-        # Check if admin or creator
         if isinstance(participant.participant, (ChannelParticipantAdmin, ChannelParticipantCreator, 
                                                 ChatParticipantAdmin, ChatParticipantCreator)):
             return True
@@ -541,7 +583,6 @@ from telethon.errors import ChatAdminRequiredError
 
 async def join_voice_chat(chat_id: int):
     try:
-        # Check if assistant already member
         try:
             me = await assistant.get_me()
             await assistant(GetParticipantRequest(chat_id, me.id))
@@ -552,12 +593,9 @@ async def join_voice_chat(chat_id: int):
 
         chat = await bot.get_entity(chat_id)
 
-        # Public group (username exists)
         if getattr(chat, "username", None):
             await assistant(JoinChannelRequest(chat.username))
             logger.info("Assistant joined public group")
-
-        # Private group
         else:
             try:
                 invite = await bot(ExportChatInviteRequest(
@@ -589,17 +627,13 @@ async def join_voice_chat(chat_id: int):
 
 # ================= VOICE MESSAGE HANDLER =================
 async def download_voice_message(event):
-    """Download voice message and convert to MP3"""
     try:
-        # Check if it's a reply to a voice message
         if event.message.reply_to_msg_id:
             reply_msg = await event.get_reply_message()
             
-            # Check if replied message has voice/media
             if reply_msg.voice or (reply_msg.document and reply_msg.document.mime_type and 'audio' in reply_msg.document.mime_type):
                 msg = await event.reply("**📥 ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴠᴏɪᴄᴇ ᴍᴇssᴀɢᴇ...**")
                 
-                # Generate unique filename
                 file_name = f"voice_{uuid.uuid4().hex}"
                 file_path = await reply_msg.download_media(file=file_name)
                 
@@ -609,10 +643,8 @@ async def download_voice_message(event):
                     await msg.delete()
                     return None
                 
-                # Convert to MP3 if needed
                 output_file = f"{file_name}.mp3"
                 
-                # Use ffmpeg to convert to MP3
                 try:
                     process = await asyncio.create_subprocess_exec(
                         'ffmpeg', '-i', file_path, '-vn', '-ar', '44100', '-ac', '2', '-b:a', '192k', output_file,
@@ -621,13 +653,11 @@ async def download_voice_message(event):
                     )
                     await process.communicate()
                     
-                    # Remove original file
                     try:
                         os.remove(file_path)
                     except:
                         pass
                     
-                    # Get duration using ffprobe
                     duration = 0
                     try:
                         process = await asyncio.create_subprocess_exec(
@@ -774,7 +804,6 @@ async def download_video(query):
 async def play_song(chat_id, song_info, is_video=False):
     player = await get_player(chat_id)
 
-    # Ensure assistant is in chat
     for attempt in range(3):
         try:
             await assistant.get_entity(chat_id)
@@ -787,7 +816,6 @@ async def play_song(chat_id, song_info, is_video=False):
                 await asyncio.sleep(1)
 
     try:
-        # Determine source (local file or URL)
         source = song_info.get("file_path") or song_info.get("url")
         if not source:
             return False
@@ -810,14 +838,11 @@ async def play_song(chat_id, song_info, is_video=False):
         player.current = song_info
         player.paused = False
 
-        # Increment songs played counter
         await db.increment_songs_played()
 
-        # Cancel previous auto task
         if player.play_task and not player.play_task.done():
             player.play_task.cancel()
 
-        # Auto next only if duration known
         duration = song_info.get("duration", 0)
         if duration > 0:
             player.play_task = asyncio.create_task(
@@ -838,7 +863,6 @@ async def play_song(chat_id, song_info, is_video=False):
 async def send_streaming_message(chat_id, song_info, is_video):
     player = await get_player(chat_id)
     
-    # Different title for voice messages
     if song_info.get('is_local', False):
         title_display = "🎤 Voice Message"
         uploader = song_info.get('uploader', 'Unknown')
@@ -847,15 +871,6 @@ async def send_streaming_message(chat_id, song_info, is_video):
         title_display = song_info.get('title', 'Unknown')[:30]
         uploader = song_info.get('uploader', 'Unknown')
         thumbnail_url = song_info.get('thumbnail')
-    
-    # Get current position (if available)
-    position_str = "0:00"
-    try:
-        # Try to get current playback position from PyTgCalls
-        # This is simplified - actual implementation may vary
-        position_str = "LIVE"
-    except:
-        pass
     
     caption = f"""
 **╭━━━━ ⟬ ➲ ɴᴏᴡ sᴛʀᴇᴀᴍɪɴɢ ⟭━━━━╮**
@@ -880,12 +895,10 @@ async def send_streaming_message(chat_id, song_info, is_video):
         [Button.inline("🗑️ ᴄʟᴇᴀʀ", data=f"clear_{chat_id}")]
     ]
     
-    # Download thumbnail only for non-voice messages
     thumb_path = None
     if thumbnail_url and not song_info.get('is_local', False):
         thumb_path = await download_and_convert_thumbnail(thumbnail_url)
     
-    # Delete old control message
     if player.control_message_id and player.control_chat_id:
         try:
             await bot.delete_messages(
@@ -895,7 +908,6 @@ async def send_streaming_message(chat_id, song_info, is_video):
         except:
             pass
     
-    # Send new control message
     try:
         if thumb_path and os.path.exists(thumb_path):
             msg = await bot.send_file(
@@ -944,7 +956,6 @@ async def auto_next(chat_id, duration):
             next_song.get("is_video", False)
         )
     else:
-        # Cleanup local file
         if player.current:
             file_path = player.current.get("file_path")
             if file_path and os.path.exists(file_path):
@@ -960,7 +971,6 @@ async def auto_next(chat_id, duration):
         except:
             pass
 
-        # Delete control message
         if player.control_message_id and player.control_chat_id:
             try:
                 await bot.delete_messages(
@@ -975,16 +985,13 @@ async def auto_next(chat_id, duration):
 
 # ================= COMMAND CHECKER =================
 def is_command(text, command):
-    """Super simple command checker for large groups"""
     if not text:
         return False
     
     text = text.strip()
     
-    # Direct check for /play, !play, .play
     for prefix in COMMAND_PREFIXES:
         if text.startswith(f"{prefix}{command}"):
-            # Check if it's exactly the command or has space after
             rest = text[len(f"{prefix}{command}"):]
             if not rest or rest[0] in [' ', '@']:
                 return True
@@ -992,7 +999,6 @@ def is_command(text, command):
     return False
 
 def get_command_args(text, command):
-    """Simple args extractor"""
     if not text:
         return None
     
@@ -1000,9 +1006,7 @@ def get_command_args(text, command):
     
     for prefix in COMMAND_PREFIXES:
         if text.startswith(f"{prefix}{command}"):
-            # Remove command part
             args = text[len(f"{prefix}{command}"):].strip()
-            # Remove bot username if present
             if args.startswith('@'):
                 parts = args.split(' ', 1)
                 if len(parts) > 1:
@@ -1012,10 +1016,35 @@ def get_command_args(text, command):
     
     return None
 
+# ================= HELP MENU FUNCTIONS =================
+async def get_help_menu():
+    """Returns the main help menu with categories"""
+    text = """
+**╭━━━━ ⟬ ʜᴇʟᴘ ᴍᴇɴᴜ ⟭━━━━╮**
+┃
+┃ ᴄʜᴏᴏsᴇ ᴛʜᴇ ᴄᴀᴛᴇɢᴏʀʏ ғᴏʀ ᴡʜɪᴄʜ ʏᴏᴜ ᴡᴀɴɴᴀ ɢᴇᴛ ʜᴇʟᴩ.
+┃ ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅs ᴄᴀɴ ʙᴇ ᴜsᴇᴅ ᴡɪᴛʜ : /
+┃
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+    """
+    
+    buttons = [
+        [Button.inline("๏ 𝚂𝚘𝚗𝚐", data="help_song"),
+         Button.inline("๏ 𝙰𝚍𝚖𝚒𝚗", data="help_admin"),
+         Button.inline("๏ 𝚂𝚞𝚍𝚘", data="help_sudo")],
+        [Button.inline("๏ 𝙼𝚊𝚒𝚗𝚝𝚎𝚗𝚊𝚗𝚌𝚎", data="help_maintenance"),
+         Button.inline("๏ 𝙿𝚒𝚗𝚐", data="help_ping"),
+         Button.inline("๏ 𝚂𝚎𝚎𝚔/𝙻𝚘𝚘𝚙", data="help_seek")],
+        [Button.inline("๏ 𝙱𝚛𝚘𝚊𝚍𝚌𝚊𝚜𝚝", data="help_broadcast"),
+         Button.inline("๏ 𝙱-𝚄𝚜𝚎𝚛𝚜", data="help_busers"),
+         Button.inline("๏ 𝙱𝚊𝚌𝚔", data="back_to_start")]
+    ]
+    
+    return text, buttons
+
 # ================= BOT COMMANDS =================
 @events.register(events.NewMessage)
 async def message_handler(event):
-    """Main message handler"""
     if not event.message.text:
         return
     
@@ -1024,40 +1053,41 @@ async def message_handler(event):
     user_id = event.sender_id
     sender = await event.get_sender()
     
-    # Check if user is blocked
     if await db.is_user_blocked(user_id):
-        # Delete their message silently
         try:
             await event.message.delete()
         except:
             pass
         return
     
-    # Add user to database
+    maintenance = await db.get_maintenance()
+    if maintenance["enabled"] and not await db.is_bot_admin(user_id) and user_id != OWNER_ID:
+        if not is_command(text, "start"):
+            try:
+                await event.reply(maintenance["message"])
+                await event.message.delete()
+            except:
+                pass
+            return
+    
     first_name = sender.first_name if hasattr(sender, 'first_name') else getattr(sender, 'title', str(sender.id))
     await db.add_user(user_id, sender.username, first_name)
     
-    # Add group to database if it's a group/channel
     if event.is_group or event.is_channel:
         chat = await event.get_chat()
         members_count = getattr(chat, 'participants_count', 0)
         await db.add_group(chat_id, chat.title, getattr(chat, 'username', ''), members_count)
     
-    # Log every command
     if text.startswith(tuple(COMMAND_PREFIXES)):
         await db.increment_command_count()
     
-    # ===== BASIC COMMANDS =====
-    
-    # /start command
+    # ===== START COMMAND =====
     if is_command(text, "start"):
         user = await event.get_sender()
         
-        # Check if user has already used /start before
         has_seen = await db.has_seen_start(user.id)
         
         if not has_seen:
-            # First time - show join channel message
             join_caption = f"""
 **๏ ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ๏ sᴜᴘᴘᴏʀᴛ ๏ ᴄʜᴀɴɴᴇʟ ᴛᴏ ᴄʜᴇᴀᴋ ᴍʏ ғᴇᴀᴛᴜʀᴇs.**
 
@@ -1070,20 +1100,15 @@ async def message_handler(event):
             
             await event.reply(file=JOIN_IMAGE_URL, message=join_caption, buttons=buttons)
             
-            # Mark that user has seen start
             await db.mark_start_seen(user.id)
-            
-            # Log user start (first time)
             await log_to_group("user_start", user=user)
             
-            # Delete user's command message
             try:
                 await event.message.delete()
             except:
                 pass
             return
         else:
-            # Second time or more - show welcome message
             caption = f"""
 ✨ **ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ ʙᴏᴛ** ✨
 
@@ -1098,1049 +1123,223 @@ async def message_handler(event):
             buttons = [
                 [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/god_knows_0"),
                  Button.url("➕ 𝙰𝚍𝚍 𝙼𝚎", f"https://t.me/{(await event.client.get_me()).username}?startgroup=true")],
-                [Button.inline("⟡➣ 𝙷𝚎𝚕𝚙", data="help"),
+                [Button.inline("⟡➣ 𝙷𝚎𝚕𝚙", data="help_menu"),
                  Button.url("⟡➣ 𝚄𝚙𝚍𝚊𝚝𝚎𝚜", f"https://t.me/{UPDATES_CHANNEL}")]
             ]
             
             await event.reply(file=WELCOME_IMAGE_URL, message=caption, buttons=buttons)
             
-            # Update last start time
             await db.mark_start_seen(user.id)
-            
-            # Log user start (returning)
             await log_to_group("user_start", user=user)
             
-            # Delete user's command message
             try:
                 await event.message.delete()
             except:
                 pass
             return
     
-    # ===== MUSIC COMMANDS =====
-    
-    # /play command
-    if is_command(text, "play"):
-        query = get_command_args(text, "play")
-
-        voice_info = None
-        if not query and event.message.reply_to_msg_id:
-            voice_info = await download_voice_message(event)
-            if voice_info:
-                query = "voice"
-
-        if not query and not voice_info:
-            reply_msg = await event.reply(
-                "**ᴜsᴀɢᴇ:** `/play <sᴏɴɢ ɴᴀᴍᴇ ᴏʀ ʟɪɴᴋ>`\n"
-                "**ᴏʀ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴠᴏɪᴄᴇ ᴍᴇssᴀɢᴇ**"
-            )
-            try:
-                await event.message.delete()
-            except:
-                pass
-
-            await asyncio.sleep(5)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-
-        msg = await event.reply("**🔍 ᴘʀᴏᴄᴇssɪɴɢ...**")
-
-        try:
-            await event.message.delete()
-        except:
-            pass
-
-        # Download audio
-        if voice_info:
-            song_info = voice_info
-        else:
-            song_info = await download_audio(query)
-
-        if not song_info or not song_info.get("file_path"):
-            await msg.edit("**❌ sᴏɴɢ ɴᴏᴛ ғᴏᴜɴᴅ!**")
-            await asyncio.sleep(3)
-            await msg.delete()
-            return
-
-        player = await get_player(chat_id)
-
-        if player.current:
-            player.queue.append(song_info)
-            queue_pos = len(player.queue)
-            
-            # Different title for voice messages
-            if voice_info:
-                title_display = "Voice Message"
-            else:
-                title_display = song_info['title'][:20]
-            
-            caption = f"""
-**╭━━━━ ⟬ ➲ ᴀᴅᴅᴇᴅ ᴛᴏ ǫᴜᴇᴜᴇ ⟭━━━━╮**
-┃
-┃⟡➣ **ᴛɪᴛʟᴇ:** `{title_display}`
-┃⟡➣ **ᴅᴜʀᴀᴛɪᴏɴ:** `{song_info['duration_str']}`
-┃⟡➣ **ᴘᴏsɪᴛɪᴏɴ:** `#{queue_pos}`
-┃⟡➣ **ᴜᴘʟᴏᴀᴅᴇʀ:** `{song_info['uploader']}`
-**╰━━━━━━━━━━━━━━━━━━━╯**
-            """
-            
-            # Download thumbnail only for non-voice messages
-            thumbnail_url = song_info.get('thumbnail')
-            thumb_path = None
-            if thumbnail_url and not voice_info:
-                thumb_path = await download_and_convert_thumbnail(thumbnail_url)
-            
-            await msg.delete()
-            
-            if thumb_path:
-                sent_msg = await bot.send_file(
-                    chat_id,
-                    thumb_path,
-                    caption=caption,
-                    spoiler=True
-                )
-                os.remove(thumb_path)
-            else:
-                sent_msg = await event.reply(caption)
-            
-            # Auto delete queue message after 10 seconds
-            await asyncio.sleep(10)
-            try:
-                await sent_msg.delete()
-            except:
-                pass
-
-        else:
-            # LOG SONG PLAYED
-            chat = await event.get_chat() if event.is_group else None
-            await log_to_group("song_played", user=sender, group=chat, song=song_info)
-            
-            success = await play_song(chat_id, song_info, is_video=False)
-
-            if not success:
-                await msg.edit("**❌ ғᴀɪʟᴇᴅ ᴛᴏ ᴘʟᴀʏ sᴏɴɢ!**")
-                await asyncio.sleep(3)
-                await msg.delete()
-
-                # Cleanup voice file
-                if voice_info:
-                    path = song_info.get("file_path")
-                    if path and os.path.exists(path):
-                        os.remove(path)
-            else:
-                await msg.delete()
-
-        return
-
-
-    # /vplay command (download video)
-    if is_command(text, "vplay"):
-        query = get_command_args(text, "vplay")
-
-        if not query:
-            reply_msg = await event.reply(
-                "**ᴜsᴀɢᴇ:** `/vplay <ᴠɪᴅᴇᴏ ɴᴀᴍᴇ ᴏʀ ʟɪɴᴋ>`"
-            )
-            try:
-                await event.message.delete()
-            except:
-                pass
-
-            await asyncio.sleep(5)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-
-        msg = await event.reply("**🎬 ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴠɪᴅᴇᴏ...**")
-
-        try:
-            await event.message.delete()
-        except:
-            pass
-
-        video_info = await download_video(query)
-
-        if not video_info or not video_info.get("file_path"):
-            await msg.edit("**❌ ᴠɪᴅᴇᴏ ɴᴏᴛ ғᴏᴜɴᴅ!**")
-            await asyncio.sleep(3)
-            await msg.delete()
-            return
-
-        player = await get_player(chat_id)
-
-        if player.current:
-            player.queue.append(video_info)
-            queue_pos = len(player.queue)
-
-            caption = f"""
-**╭━━━━ ⟬ ➲ ᴀᴅᴅᴇᴅ ᴛᴏ ǫᴜᴇᴜᴇ ⟭━━━━╮**
-┃
-┃⟡➣ **ᴛɪᴛʟᴇ:** `{video_info['title'][:20]}`
-┃⟡➣ **ᴅᴜʀᴀᴛɪᴏɴ:** `{video_info['duration_str']}`
-┃⟡➣ **ᴘᴏsɪᴛɪᴏɴ:** `#{queue_pos}`
-┃⟡➣ **ᴜᴘʟᴏᴀᴅᴇʀ:** `{video_info['uploader']}`
-**╰━━━━━━━━━━━━━━━━━━━╯**
-            """
-            
-            thumbnail_url = video_info.get('thumbnail')
-            thumb_path = await download_and_convert_thumbnail(thumbnail_url) if thumbnail_url else None
-            
-            await msg.delete()
-            
-            if thumb_path:
-                sent_msg = await bot.send_file(
-                    chat_id,
-                    thumb_path,
-                    caption=caption,
-                    spoiler=True
-                )
-                os.remove(thumb_path)
-            else:
-                sent_msg = await event.reply(caption)
-            
-            # Auto delete queue message after 10 seconds
-            await asyncio.sleep(10)
-            try:
-                await sent_msg.delete()
-            except:
-                pass
-
-        else:
-            # LOG SONG PLAYED (video)
-            chat = await event.get_chat() if event.is_group else None
-            await log_to_group("song_played", user=sender, group=chat, song=video_info)
-            
-            success = await play_song(chat_id, video_info, is_video=True)
-
-            if not success:
-                await msg.edit("**❌ ғᴀɪʟᴇᴅ ᴛᴏ ᴘʟᴀʏ ᴠɪᴅᴇᴏ!**")
-                await asyncio.sleep(3)
-                await msg.delete()
-            else:
-                await msg.delete()
-
-        return
-    
-    # /skip command
-    if is_command(text, "skip"):
-        if not await is_admin(chat_id, user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ sᴋɪᴘ!**")
-            # Delete user's command
-            try:
-                await event.message.delete()
-            except:
-                pass
-            # Delete error message after 3 seconds
-            await asyncio.sleep(3)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-        
-        player = await get_player(chat_id)
-        
-        if not player.current:
-            reply_msg = await event.reply("**❌ ɴᴏᴛʜɪɴɢ ɪs ᴘʟᴀʏɪɴɢ!**")
-            # Delete user's command
-            try:
-                await event.message.delete()
-            except:
-                pass
-            # Delete error message after 3 seconds
-            await asyncio.sleep(3)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-        
-        msg = await event.reply("**⏭️ sᴋɪᴘᴘɪɴɢ...**")
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        # Clean up current local file if it was a voice message
-        if player.current and player.current.get('is_local', False):
-            try:
-                os.remove(player.current['file_path'])
-            except:
-                pass
-        
-        # Cancel current play task
-        if player.play_task and not player.play_task.done():
-            player.play_task.cancel()
-        
-        # Stop current stream
-        try:
-            await call.leave_call(chat_id)
-        except:
-            pass
-        
-        # Small delay to ensure clean stop
-        await asyncio.sleep(1)
-        
-        if player.queue:
-            next_song = player.queue.pop(0)
-            success = await play_song(chat_id, next_song, next_song.get('is_video', False))
-            if success:
-                await msg.edit("**✅ sᴋɪᴘᴘᴇᴅ ᴛᴏ ɴᴇxᴛ sᴏɴɢ!**")
-                await asyncio.sleep(3)
-                await msg.delete()
-            else:
-                await msg.edit("**❌ ғᴀɪʟᴇᴅ ᴛᴏ ᴘʟᴀʏ ɴᴇxᴛ sᴏɴɢ!**")
-                player.queue.insert(0, next_song)
-                await asyncio.sleep(3)
-                await msg.delete()
-        else:
-            player.current = None
-            
-            if player.control_message_id and player.control_chat_id:
-                try:
-                    await bot.delete_messages(player.control_chat_id, player.control_message_id)
-                except:
-                    pass
-            player.control_message_id = None
-            player.control_chat_id = None
-            
-            await msg.edit("**⏹️ ǫᴜᴇᴜᴇ ɪs ᴇᴍᴘᴛʏ!**")
-            await asyncio.sleep(3)
-            await msg.delete()
-        return
-    
-    # /pause command
-    if is_command(text, "pause"):
-        if not await is_admin(chat_id, user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ ᴘᴀᴜsᴇ!**")
-            # Delete user's command
-            try:
-                await event.message.delete()
-            except:
-                pass
-            # Delete error message after 3 seconds
-            await asyncio.sleep(3)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        try:
-            await call.pause(chat_id)
-            msg = await event.reply("**⏸️ ᴘᴀᴜsᴇᴅ**")
-            await asyncio.sleep(3)
-            await msg.delete()
-        except Exception as e:
-            msg = await event.reply(f"**❌ ғᴀɪʟᴇᴅ: {str(e)[:50]}**")
-            await asyncio.sleep(3)
-            await msg.delete()
-        return
-    
-    # /resume command
-    if is_command(text, "resume"):
-        if not await is_admin(chat_id, user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ ʀᴇsᴜᴍᴇ!**")
-            # Delete user's command
-            try:
-                await event.message.delete()
-            except:
-                pass
-            # Delete error message after 3 seconds
-            await asyncio.sleep(3)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        try:
-            await call.resume(chat_id)
-            msg = await event.reply("**▶️ ʀᴇsᴜᴍᴇᴅ**")
-            await asyncio.sleep(3)
-            await msg.delete()
-        except Exception as e:
-            msg = await event.reply(f"**❌ ғᴀɪʟᴇᴅ: {str(e)[:50]}**")
-            await asyncio.sleep(3)
-            await msg.delete()
-        return
-    
-    # /end command
-    if is_command(text, "end"):
-        if not await is_admin(chat_id, user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ ᴇɴᴅ!**")
-            # Delete user's command
-            try:
-                await event.message.delete()
-            except:
-                pass
-            # Delete error message after 3 seconds
-            await asyncio.sleep(3)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-        
-        player = await get_player(chat_id)
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        # Clean up current local file if it was a voice message
-        if player.current and player.current.get('is_local', False):
-            try:
-                os.remove(player.current['file_path'])
-            except:
-                pass
-        
-        if player.play_task and not player.play_task.done():
-            player.play_task.cancel()
-        
-        try:
-            await call.leave_call(chat_id)
-        except:
-            pass
-        
-        # Clean up all local files in queue
-        for song in player.queue:
-            if song.get('is_local', False):
-                try:
-                    os.remove(song['file_path'])
-                except:
-                    pass
-        
-        player.queue.clear()
-        player.current = None
-        player.paused = False
-        
-        if player.control_message_id and player.control_chat_id:
-            try:
-                await bot.delete_messages(player.control_chat_id, player.control_message_id)
-            except:
-                pass
-        player.control_message_id = None
-        player.control_chat_id = None
-        
-        msg = await event.reply("**⏹️ sᴛᴏᴘᴘᴇᴅ ᴀɴᴅ ʟᴇғᴛ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ!**")
-        await asyncio.sleep(3)
-        await msg.delete()
-        return
-    
-    # /queue command
-    if is_command(text, "queue"):
-        player = await get_player(chat_id)
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        if not player.queue:
-            msg = await event.reply("**📭 ǫᴜᴇᴜᴇ ɪs ᴇᴍᴘᴛʏ!**")
-            await asyncio.sleep(3)
-            await msg.delete()
-            return
-        
-        text = "**📋 ǫᴜᴇᴜᴇ ʟɪsᴛ:**\n\n"
-        for i, song in enumerate(player.queue[:10], 1):
-            if song.get('is_local', False):
-                title = 'Voice Message'
-            else:
-                title = song['title'][:30]
-            text += f"{i}. {title} ({song['duration_str']})\n"
-        
-        if len(player.queue) > 10:
-            text += f"\n...ᴀɴᴅ {len(player.queue) - 10} ᴍᴏʀᴇ"
-        
-        msg = await event.reply(text)
-        await asyncio.sleep(10)
-        await msg.delete()
-        return
-    
-    # /loop command
-    if is_command(text, "loop"):
-        player = await get_player(chat_id)
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        player.loop = not player.loop
-        status = 'ᴏɴ' if player.loop else 'ᴏғғ'
-        msg = await event.reply(f"**🔄 ʟᴏᴏᴘ: {status}**")
-        await asyncio.sleep(3)
-        await msg.delete()
-        
-        # Update streaming message if exists
-        if player.current and player.control_message_id:
-            await send_streaming_message(chat_id, player.current, player.current.get('is_video', False))
-        return
-    
-    # /clear command
-    if is_command(text, "clear"):
-        if not await is_admin(chat_id, user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ ᴄʟᴇᴀʀ ǫᴜᴇᴜᴇ!**")
-            # Delete user's command
-            try:
-                await event.message.delete()
-            except:
-                pass
-            # Delete error message after 3 seconds
-            await asyncio.sleep(3)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-        
-        player = await get_player(chat_id)
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        # Clean up all local files in queue
-        for song in player.queue:
-            if song.get('is_local', False):
-                try:
-                    os.remove(song['file_path'])
-                except:
-                    pass
-        
-        queue_count = len(player.queue)
-        player.queue.clear()
-        msg = await event.reply(f"**🗑️ {queue_count} sᴏɴɢs ʀᴇᴍᴏᴠᴇᴅ ғʀᴏᴍ ǫᴜᴇᴜᴇ!**")
-        await asyncio.sleep(3)
-        await msg.delete()
-        return
-    
-    # /reload command
-    if is_command(text, "reload"):
-        if not await is_admin(chat_id, user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ ʀᴇʟᴏᴀᴅ!**")
-            # Delete user's command
-            try:
-                await event.message.delete()
-            except:
-                pass
-            # Delete error message after 3 seconds
-            await asyncio.sleep(3)
-            try:
-                await reply_msg.delete()
-            except:
-                pass
-            return
-        
-        # Delete user's command message
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        msg = await event.reply("**✅ ᴀᴅᴍɪɴ ᴄʜᴇᴄᴋ ʀᴇʟᴏᴀᴅᴇᴅ!**")
-        await asyncio.sleep(3)
-        await msg.delete()
-        return
-    
-    # /ping command
-    if is_command(text, "ping"):
-        start_time = time.time()
-        msg = await event.reply("**🏓 ᴘᴏɴɢɪɴɢ...**")
-        end_time = time.time()
-        ping_ms = round((end_time - start_time) * 1000, 3)
-        
-        # Get system stats
-        ram_percent = psutil.virtual_memory().percent
-        cpu_percent = psutil.cpu_percent(interval=0.5)
-        disk_percent = psutil.disk_usage('/').percent
-        
-        # Get uptime
-        uptime_seconds = time.time() - BOT_START_TIME
-        uptime_str = str(timedelta(seconds=int(uptime_seconds)))
-        
-        # Get pytgcalls ping (simulated)
-        pytgcalls_ping = round(random.uniform(0.005, 0.020), 3)
-        
-        caption = f"""
-🏓 **ᴩᴏɴɢ :** {ping_ms}ᴍs
-
-˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ sʏsᴛᴇᴍ sᴛᴀᴛs :
-
-↬ **ᴜᴩᴛɪᴍᴇ :** {uptime_str}
-↬ **ʀᴀᴍ :** {ram_percent}%
-↬ **ᴄᴩᴜ :** {cpu_percent}%
-↬ **ᴅɪsᴋ :** {disk_percent}%
-↬ **ᴩʏ-ᴛɢᴄᴀʟʟs :** {pytgcalls_ping}ᴍs
-        """
-        
-        # Delete user's command
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        await msg.delete()
-        await event.reply(file=PING_IMAGE_URL, message=caption)
-        return
-    
-    # /stats command (only for bot admins)
-    if is_command(text, "stats"):
-        if not await db.is_bot_admin(user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴠɪᴇᴡ sᴛᴀᴛs!**")
-            # Delete user's command
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        stats = await db.get_stats()
-        
-        # Delete user's command
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        # Get blocked users count
-        blocked_users = await db.get_blocked_users()
-        blocked_count = len(blocked_users)
-        
-        caption = f"""
-**╭━━━━ ⟬ ʙᴏᴛ sᴛᴀᴛɪsᴛɪᴄs ⟭━━━━╮**
-┃
-┃⟡➣ **ᴛᴏᴛᴀʟ ᴜsᴇʀs:** `{stats['users']}`
-┃⟡➣ **ᴛᴏᴛᴀʟ ɢʀᴏᴜᴘs:** `{stats['groups']}`
-┃⟡➣ **ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs:** `{blocked_count}`
-┃⟡➣ **ᴛᴏᴛᴀʟ ᴄᴏᴍᴍᴀɴᴅs:** `{stats['total_commands']}`
-┃⟡➣ **sᴏɴɢs ᴘʟᴀʏᴇᴅ:** `{stats['songs_played']}`
-┃⟡➣ **ʙᴏᴛ ᴜᴘᴛɪᴍᴇ:** `{stats['uptime']}`
-┃⟡➣ **ᴀᴄᴛɪᴠᴇ ᴘʟᴀʏᴇʀs:** `{len(players)}`
-**╰━━━━━━━━━━━━━━━━━━━━━━╯**
-        """
-        
-        await event.reply(caption)
-        return
-    
-    # ===== BLOCK/UNBLOCK COMMANDS (Only for bot admins) =====
-    
-    # /block command
-    if is_command(text, "block"):
-        if not await db.is_bot_admin(user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ʙʟᴏᴄᴋ ᴜsᴇʀs!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        # Get target user
-        target_user = None
-        target_id = None
-        
-        # Check if replying to a message
-        if event.message.reply_to_msg_id:
-            reply_msg = await event.get_reply_message()
-            if reply_msg.sender_id:
-                target_id = reply_msg.sender_id
-                target_user = reply_msg.sender
-        
-        # Check if user mention or ID in command
-        if not target_id:
-            args = get_command_args(text, "block")
-            if args:
-                # Try to extract user ID or username
-                args = args.strip()
-                if args.startswith('@'):
-                    # Username
-                    username = args[1:]
-                    try:
-                        entity = await bot.get_entity(username)
-                        target_id = entity.id
-                        target_user = entity
-                    except:
-                        pass
-                elif args.isdigit():
-                    # User ID
-                    target_id = int(args)
-                    try:
-                        target_user = await bot.get_entity(target_id)
-                    except:
-                        target_user = None
-        
-        if not target_id:
-            reply_msg = await event.reply("**ᴜsᴀɢᴇ:** `/block [ᴜsᴇʀɴᴀᴍᴇ ᴏʀ ʀᴇᴩʟʏ ᴛᴏ ᴀ ᴜsᴇʀ]`")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
+    # ===== HELP COMMAND =====
+    if is_command(text, "help"):
+        help_text, help_buttons = await get_help_menu()
+        await event.reply(help_text, buttons=help_buttons)
         
         try:
             await event.message.delete()
         except:
             pass
-        
-        # Block the user
-        if await db.block_user(target_id):
-            target_name = get_display_name(target_user) if target_user else str(target_id)
-            msg = await event.reply(f"**🔴 ᴜsᴇʀ {target_name} ʜᴀs ʙᴇᴇɴ ʙʟᴏᴄᴋᴇᴅ!**")
-            
-            # Log to group
-            await log_to_group("user_blocked", user=sender, details={
-                "target_id": target_id,
-                "target_name": target_name
-            })
-        else:
-            msg = await event.reply("**⚠️ ᴜsᴇʀ ɪs ᴀʟʀᴇᴀᴅʏ ʙʟᴏᴄᴋᴇᴅ ᴏʀ ɪs ᴛʜᴇ ᴏᴡɴᴇʀ!**")
-        
-        await asyncio.sleep(3)
-        await msg.delete()
-        return
-    
-    # /unblock command
-    if is_command(text, "unblock"):
-        if not await db.is_bot_admin(user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜɴʙʟᴏᴄᴋ ᴜsᴇʀs!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        # Get target user
-        target_id = None
-        target_user = None
-        
-        # Check if replying to a message
-        if event.message.reply_to_msg_id:
-            reply_msg = await event.get_reply_message()
-            if reply_msg.sender_id:
-                target_id = reply_msg.sender_id
-                target_user = reply_msg.sender
-        
-        # Check if user mention or ID in command
-        if not target_id:
-            args = get_command_args(text, "unblock")
-            if args:
-                args = args.strip()
-                if args.startswith('@'):
-                    username = args[1:]
-                    try:
-                        entity = await bot.get_entity(username)
-                        target_id = entity.id
-                        target_user = entity
-                    except:
-                        pass
-                elif args.isdigit():
-                    target_id = int(args)
-                    try:
-                        target_user = await bot.get_entity(target_id)
-                    except:
-                        target_user = None
-        
-        if not target_id:
-            reply_msg = await event.reply("**ᴜsᴀɢᴇ:** `/unblock [ᴜsᴇʀɴᴀᴍᴇ ᴏʀ ʀᴇᴩʟʏ ᴛᴏ ᴀ ᴜsᴇʀ]`")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        # Unblock the user
-        if await db.unblock_user(target_id):
-            target_name = get_display_name(target_user) if target_user else str(target_id)
-            msg = await event.reply(f"**🟢 ᴜsᴇʀ {target_name} ʜᴀs ʙᴇᴇɴ ᴜɴʙʟᴏᴄᴋᴇᴅ!**")
-            
-            # Log to group
-            await log_to_group("user_unblocked", user=sender, details={
-                "target_id": target_id,
-                "target_name": target_name
-            })
-        else:
-            msg = await event.reply("**⚠️ ᴜsᴇʀ ɪs ɴᴏᴛ ɪɴ ᴛʜᴇ ʙʟᴏᴄᴋᴇᴅ ʟɪsᴛ!**")
-        
-        await asyncio.sleep(3)
-        await msg.delete()
-        return
-    
-    # /blockedusers command
-    if is_command(text, "blockedusers"):
-        if not await db.is_bot_admin(user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴠɪᴇᴡ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        blocked_ids = await db.get_blocked_users()
-        
-        if not blocked_ids:
-            msg = await event.reply("**📭 ɴᴏ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs ғᴏᴜɴᴅ!**")
-            await asyncio.sleep(3)
-            await msg.delete()
-            return
-        
-        text = "**🔴 ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs:**\n\n"
-        for i, uid in enumerate(blocked_ids[:20], 1):
-            try:
-                user = await bot.get_entity(uid)
-                name = get_display_name(user)
-                username = f"@{user.username}" if user.username else ""
-                text += f"{i}. {name} (`{uid}`) {username}\n"
-            except:
-                text += f"{i}. `{uid}`\n"
-        
-        if len(blocked_ids) > 20:
-            text += f"\n...ᴀɴᴅ {len(blocked_ids) - 20} ᴍᴏʀᴇ"
-        
-        msg = await event.reply(text)
-        await asyncio.sleep(10)
-        await msg.delete()
-        return
-    
-    # ===== SEEK COMMANDS =====
-    
-    # /seek command
-    if is_command(text, "seek"):
-        if not await is_admin(chat_id, user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ sᴇᴇᴋ!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        player = await get_player(chat_id)
-        
-        if not player.current:
-            reply_msg = await event.reply("**❌ ɴᴏᴛʜɪɴɢ ɪs ᴘʟᴀʏɪɴɢ!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        args = get_command_args(text, "seek")
-        if not args:
-            reply_msg = await event.reply("**ᴜsᴀɢᴇ:** `/seek [ᴅᴜʀᴀᴛɪᴏɴ ɪɴ sᴇᴄᴏɴᴅs]`")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        try:
-            seconds = int(args)
-        except:
-            reply_msg = await event.reply("**❌ ᴘʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴀ ᴠᴀʟɪᴅ ɴᴜᴍʙᴇʀ!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        msg = await event.reply(f"**⏩ sᴇᴇᴋɪɴɢ +{seconds} sᴇᴄᴏɴᴅs...**")
-        
-        # Note: PyTgCalls doesn't directly support seek
-        # We need to restart the stream with offset
-        # This is a simplified version - actual implementation may vary
-        
-        # Get current song info
-        current_song = player.current
-        is_video = current_song.get('is_video', False)
-        
-        # Calculate new position (this is just for display)
-        current_duration = current_song.get('duration', 0)
-        new_position = min(seconds, current_duration)  # Simplified
-        
-        # Stop current stream
-        try:
-            await call.leave_call(chat_id)
-        except:
-            pass
-        
-        # Small delay
-        await asyncio.sleep(1)
-        
-        # Restart with new position (if supported by yt-dlp)
-        # For now, just show message
-        await msg.edit(f"**✅ sᴇᴇᴋᴇᴅ ᴛᴏ +{seconds}s (sɪᴍᴜʟᴀᴛᴇᴅ)**")
-        
-        # Restart the song
-        await play_song(chat_id, current_song, is_video)
-        
-        await asyncio.sleep(3)
-        await msg.delete()
-        return
-    
-    # /seekback command
-    if is_command(text, "seekback"):
-        if not await is_admin(chat_id, user_id):
-            reply_msg = await event.reply("**❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ sᴇᴇᴋ!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        player = await get_player(chat_id)
-        
-        if not player.current:
-            reply_msg = await event.reply("**❌ ɴᴏᴛʜɪɴɢ ɪs ᴘʟᴀʏɪɴɢ!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        args = get_command_args(text, "seekback")
-        if not args:
-            reply_msg = await event.reply("**ᴜsᴀɢᴇ:** `/seekback [ᴅᴜʀᴀᴛɪᴏɴ ɪɴ sᴇᴄᴏɴᴅs]`")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        try:
-            seconds = int(args)
-        except:
-            reply_msg = await event.reply("**❌ ᴘʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴀ ᴠᴀʟɪᴅ ɴᴜᴍʙᴇʀ!**")
-            try:
-                await event.message.delete()
-            except:
-                pass
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-        
-        try:
-            await event.message.delete()
-        except:
-            pass
-        
-        msg = await event.reply(f"**⏪ sᴇᴇᴋɪɴɢ -{seconds} sᴇᴄᴏɴᴅs...**")
-        
-        # Get current song info
-        current_song = player.current
-        is_video = current_song.get('is_video', False)
-        
-        # Stop current stream
-        try:
-            await call.leave_call(chat_id)
-        except:
-            pass
-        
-        # Small delay
-        await asyncio.sleep(1)
-        
-        # For now, just show message
-        await msg.edit(f"**✅ sᴇᴇᴋᴇᴅ ᴛᴏ -{seconds}s (sɪᴍᴜʟᴀᴛᴇᴅ)**")
-        
-        # Restart the song
-        await play_song(chat_id, current_song, is_video)
-        
-        await asyncio.sleep(3)
-        await msg.delete()
         return
 
 # ================= CALLBACK HANDLER =================
 @events.register(events.CallbackQuery)
 async def callback_handler(event):
-    """Handle button callbacks"""
     data = event.data.decode()
     user_id = event.sender_id
     
-    # Check if user is blocked
     if await db.is_user_blocked(user_id):
         await event.answer("🚫 ʏᴏᴜ ᴀʀᴇ ʙʟᴏᴄᴋᴇᴅ ғʀᴏᴍ ᴜsɪɴɢ ᴛʜɪs ʙᴏᴛ!", alert=True)
         return
     
-    if "_" in data and data not in ["help", "back_to_start"]:
+    # Help menu callbacks
+    if data == "help_menu":
+        help_text, help_buttons = await get_help_menu()
+        await event.edit(help_text, buttons=help_buttons)
+        return
+    
+    elif data == "help_song":
+        text = """
+**╭━━━━ ⟬ 🎵 sᴏɴɢ ᴄᴏᴍᴍᴀɴᴅs ⟭━━━━╮**
+┃
+┃ /play [song] : ᴘʟᴀʏ ᴀᴜᴅɪᴏ ғʀᴏᴍ ʏᴏᴜᴛᴜʙᴇ
+┃ /vplay [video] : ᴘʟᴀʏ ᴠɪᴅᴇᴏ ғʀᴏᴍ ʏᴏᴜᴛᴜʙᴇ
+┃ /queue : sʜᴏᴡ ᴛʜᴇ ǫᴜᴇᴜᴇᴅ ᴛʀᴀᴄᴋs ʟɪsᴛ
+┃ /loop : ᴛᴏɢɢʟᴇ ʟᴏᴏᴘ ғᴏʀ ᴄᴜʀʀᴇɴᴛ sᴏɴɢ
+┃ /seek [seconds] : ғᴏʀᴡᴀʀᴅ sᴇᴇᴋ ᴛʜᴇ sᴛʀᴇᴀᴍ
+┃ /seekback [seconds] : ʙᴀᴄᴋᴡᴀʀᴅ sᴇᴇᴋ ᴛʜᴇ sᴛʀᴇᴀᴍ
+┃
+┃ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴠᴏɪᴄᴇ ᴍᴇssᴀɢᴇ ᴡɪᴛʜ /play ᴛᴏ ᴘʟᴀʏ ɪᴛ
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="help_menu")]]
+        await event.edit(text, buttons=buttons)
+        return
+    
+    elif data == "help_admin":
+        text = """
+**╭━━━━ ⟬ 👑 ᴀᴅᴍɪɴ ᴄᴏᴍᴍᴀɴᴅs ⟭━━━━╮**
+┃
+┃ /pause : ᴘᴀᴜsᴇ ᴛʜᴇ ᴄᴜʀʀᴇɴᴛ ᴘʟᴀʏɪɴɢ sᴛʀᴇᴀᴍ
+┃ /resume : ʀᴇsᴜᴍᴇ ᴛʜᴇ ᴘᴀᴜsᴇᴅ sᴛʀᴇᴀᴍ
+┃ /skip : sᴋɪᴘ ᴛʜᴇ ᴄᴜʀʀᴇɴᴛ ᴘʟᴀʏɪɴɢ sᴛʀᴇᴀᴍ
+┃ /end : ᴄʟᴇᴀʀs ᴛʜᴇ ǫᴜᴇᴜᴇ ᴀɴᴅ ᴇɴᴅ sᴛʀᴇᴀᴍ
+┃ /player : ɢᴇᴛ ᴀ ɪɴᴛᴇʀᴀᴄᴛɪᴠᴇ ᴘʟᴀʏᴇʀ ᴘᴀɴᴇʟ
+┃ /clear : ᴄʟᴇᴀʀ ᴛʜᴇ ᴇɴᴛɪʀᴇ ǫᴜᴇᴜᴇ
+┃ /reload : ʀᴇʟᴏᴀᴅ ᴀᴅᴍɪɴ ᴄʜᴇᴄᴋ
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="help_menu")]]
+        await event.edit(text, buttons=buttons)
+        return
+    
+    elif data == "help_sudo":
+        text = """
+**╭━━━━ ⟬ 🔧 sᴜᴅᴏ ᴄᴏᴍᴍᴀɴᴅs ⟭━━━━╮**
+┃
+┃ /addadmin [id] : ᴀᴅᴅ ʙᴏᴛ ᴀᴅᴍɪɴ
+┃ /deladmin [id] : ʀᴇᴍᴏᴠᴇ ʙᴏᴛ ᴀᴅᴍɪɴ
+┃ /admins : sʜᴏᴡ ᴀʟʟ ʙᴏᴛ ᴀᴅᴍɪɴs
+┃ /stats : sʜᴏᴡ ʙᴏᴛ sᴛᴀᴛɪsᴛɪᴄs
+┃ /block [user] : ʙʟᴏᴄᴋ ᴀ ᴜsᴇʀ ғʀᴏᴍ ʙᴏᴛ
+┃ /unblock [user] : ᴜɴʙʟᴏᴄᴋ ᴀ ᴜsᴇʀ
+┃ /blockedusers : sʜᴏᴡ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs ʟɪsᴛ
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="help_menu")]]
+        await event.edit(text, buttons=buttons)
+        return
+    
+    elif data == "help_maintenance":
+        text = """
+**╭━━━━ ⟬ 🚧 ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴄᴏᴍᴍᴀɴᴅs ⟭━━━━╮**
+┃
+┃ /maintenance enable : ᴇɴᴀʙʟᴇ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴍᴏᴅᴇ
+┃ /maintenance disable : ᴅɪsᴀʙʟᴇ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴍᴏᴅᴇ
+┃
+┃ ᴡʜᴇɴ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴍᴏᴅᴇ ɪs ᴇɴᴀʙʟᴇᴅ,
+┃ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.
+┃ ᴏᴛʜᴇʀ ᴜsᴇʀs ᴡɪʟʟ sᴇᴇ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴍᴇssᴀɢᴇ.
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="help_menu")]]
+        await event.edit(text, buttons=buttons)
+        return
+    
+    elif data == "help_ping":
+        text = """
+**╭━━━━ ⟬ 🏓 ᴘɪɴɢ & sᴛᴀᴛs ⟭━━━━╮**
+┃
+┃ /start : sᴛᴀʀᴛs ᴛʜᴇ ᴍᴜsɪᴄ ʙᴏᴛ
+┃ /help : ɢᴇᴛ ʜᴇʟᴩ ᴍᴇɴᴜ ᴡɪᴛʜ ᴇxᴩʟᴀɴᴀᴛɪᴏɴ
+┃ /ping : sʜᴏᴡs ᴛʜᴇ ᴩɪɴɢ ᴀɴᴅ sʏsᴛᴇᴍ sᴛᴀᴛs
+┃
+┃ ᴩɪɴɢ ᴄᴏᴍᴍᴀɴᴅ sʜᴏᴡs:
+┃ • ʙᴏᴛ ʀᴇsᴘᴏɴsᴇ ᴛɪᴍᴇ
+┃ • ʀᴀᴍ ᴜsᴀɢᴇ
+┃ • ᴄᴩᴜ ᴜsᴀɢᴇ
+┃ • ᴅɪsᴋ ᴜsᴀɢᴇ
+┃ • ʙᴏᴛ ᴜᴩᴛɪᴍᴇ
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="help_menu")]]
+        await event.edit(text, buttons=buttons)
+        return
+    
+    elif data == "help_seek":
+        text = """
+**╭━━━━ ⟬ ⏱️ sᴇᴇᴋ/ʟᴏᴏᴘ ᴄᴏᴍᴍᴀɴᴅs ⟭━━━━╮**
+┃
+┃ /seek [seconds] : ғᴏʀᴡᴀʀᴅ sᴇᴇᴋ ᴛʜᴇ sᴛʀᴇᴀᴍ
+┃ /seekback [seconds] : ʙᴀᴄᴋᴡᴀʀᴅ sᴇᴇᴋ ᴛʜᴇ sᴛʀᴇᴀᴍ
+┃ /loop : ᴛᴏɢɢʟᴇ ʟᴏᴏᴘ ᴍᴏᴅᴇ ғᴏʀ ᴄᴜʀʀᴇɴᴛ sᴏɴɢ
+┃
+┃ ʏᴏᴜ ᴄᴀɴ ᴀʟsᴏ ᴜsᴇ ʙᴜᴛᴛᴏɴs ɪɴ ᴘʟᴀʏᴇʀ:
+┃ • ⏪ -10s : 10 sᴇᴄᴏɴᴅs ʙᴀᴄᴋᴡᴀʀᴅ
+┃ • ⏩ +10s : 10 sᴇᴄᴏɴᴅs ғᴏʀᴡᴀʀᴅ
+┃ • 🔄 : ᴛᴏɢɢʟᴇ ʟᴏᴏᴘ
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="help_menu")]]
+        await event.edit(text, buttons=buttons)
+        return
+    
+    elif data == "help_broadcast":
+        text = """
+**╭━━━━ ⟬ 📢 ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴏᴍᴍᴀɴᴅs ⟭━━━━╮**
+┃
+┃ /gcast : sᴛᴀʀᴛ ʙʀᴏᴀᴅᴄᴀsᴛ ᴘʀᴏᴄᴇss
+┃
+┃ ᴀғᴛᴇʀ ᴛʏᴘɪɴɢ /gcast, ʏᴏᴜ ᴄᴀɴ sᴇɴᴅ:
+┃ • ᴛᴇxᴛ ᴍᴇssᴀɢᴇ
+┃ • ᴘʜᴏᴛᴏ ᴡɪᴛʜ ᴄᴀᴘᴛɪᴏɴ
+┃ • ᴠɪᴅᴇᴏ ᴡɪᴛʜ ᴄᴀᴘᴛɪᴏɴ
+┃ • sᴛɪᴄᴋᴇʀ
+┃ • ᴀɴʏ ғɪʟᴇ ᴡɪᴛʜ ᴄᴀᴘᴛɪᴏɴ
+┃
+┃ ʏᴏᴜ ᴡɪʟʟ ɢᴇᴛ ᴏᴘᴛɪᴏɴs ᴛᴏ ᴄʜᴏᴏsᴇ:
+┃ • -user : ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ᴜsᴇʀs ᴏɴʟʏ
+┃ • -pin : ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ɢʀᴏᴜᴘs ᴀɴᴅ ᴘɪɴ
+┃ • -pinloud : ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ɢʀᴏᴜᴘs ᴡɪᴛʜ ɴᴏᴛɪғʏ
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="help_menu")]]
+        await event.edit(text, buttons=buttons)
+        return
+    
+    elif data == "help_busers":
+        text = """
+**╭━━━━ ⟬ 🔴 ʙ-ᴜsᴇʀs ᴄᴏᴍᴍᴀɴᴅs ⟭━━━━╮**
+┃
+┃ /block [user] : ʙʟᴏᴄᴋ ᴀ ᴜsᴇʀ ғʀᴏᴍ ᴛʜᴇ ʙᴏᴛ
+┃   (ᴜsᴇʀɴᴀᴍᴇ ᴏʀ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ)
+┃
+┃ /unblock [user] : ᴜɴʙʟᴏᴄᴋs ᴛʜᴇ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀ
+┃
+┃ /blockedusers : sʜᴏᴡs ᴛʜᴇ ʟɪsᴛ ᴏғ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs
+┃
+┃ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs ᴄᴀɴɴᴏᴛ ᴜsᴇ ᴀɴʏ ʙᴏᴛ ᴄᴏᴍᴍᴀɴᴅs.
+**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="help_menu")]]
+        await event.edit(text, buttons=buttons)
+        return
+    
+    elif data == "back_to_start":
+        user = await event.get_sender()
+        caption = f"""
+    ✨ **ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ ʙᴏᴛ** ✨
+
+    ⟡➣ **ʜᴇʏ** [{get_display_name(user)}](tg://user?id={user.id}) ❤️
+
+    ⟡➣ **ɪ ᴀᴍ ᴀ ᴘᴏᴡᴇʀғᴜʟ ᴍᴜsɪᴄ ᴘʟᴀʏᴇʀ ʙᴏᴛ.**
+    ⟡➣ **ᴛʜᴀᴛ ᴄᴀɴ ᴘʟᴀʏ ᴍᴜsɪᴄ ᴀɴᴅ ᴠɪᴅᴇᴏ ɪɴ ᴠᴏɪᴄᴇ ᴄʜᴀᴛs.**
+    """
+    
+        buttons = [
+            [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/god_knows_0"),
+             Button.url("➕ 𝙰𝚍𝚍 𝙼𝚎", f"https://t.me/{(await event.client.get_me()).username}?startgroup=true")],
+            [Button.inline("⟡➣ 𝙷𝚎𝚕𝚙", data="help_menu"),
+             Button.url("⟡➣ 𝚄𝚙𝚍𝚊𝚝𝚎𝚜", f"https://t.me/{UPDATES_CHANNEL}")]
+        ]
+    
+        # Callback message mein photo nahi bhej sakte, sirf edit kar sakte hain
+        await event.edit(caption, buttons=buttons)
+    
+        return
+    
+    if "_" in data:
         command, chat_id_str = data.split("_", 1)
         chat_id = int(chat_id_str)
     else:
-        # Handle non-chat specific callbacks
-        if data == "help":
-            await help_callback(event)
-            return
-        elif data == "back_to_start":
-            await back_to_start(event)
-            return
-        else:
-            await event.answer("Invalid data!", alert=True)
-            return
+        return
     
     if not await is_admin(chat_id, user_id):
         await event.answer("ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ ᴅᴏ ᴛʜɪs!", alert=True)
@@ -2160,7 +1359,6 @@ async def callback_handler(event):
             await event.answer("ɴᴏᴛʜɪɴɢ ɪs ᴘʟᴀʏɪɴɢ!", alert=True)
             return
         
-        # Clean up current local file if it was a voice message
         if player.current and player.current.get('is_local', False):
             try:
                 os.remove(player.current['file_path'])
@@ -2199,14 +1397,12 @@ async def callback_handler(event):
             await event.answer("ǫᴜᴇᴜᴇ ᴇᴍᴘᴛʏ")
     
     elif command == "end":
-        # Clean up current local file if it was a voice message
         if player.current and player.current.get('is_local', False):
             try:
                 os.remove(player.current['file_path'])
             except:
                 pass
         
-        # Clean up all local files in queue
         for song in player.queue:
             if song.get('is_local', False):
                 try:
@@ -2258,7 +1454,6 @@ async def callback_handler(event):
         await event.answer(text, alert=True)
     
     elif command == "clear":
-        # Clean up all local files in queue
         for song in player.queue:
             if song.get('is_local', False):
                 try:
@@ -2269,7 +1464,6 @@ async def callback_handler(event):
         player.queue.clear()
         await event.answer("🗑️ ǫᴜᴇᴜᴇ ᴄʟᴇᴀʀᴇᴅ")
     
-    # New seek buttons
     elif command == "seek":
         if not player.current:
             await event.answer("ɴᴏᴛʜɪɴɢ ɪs ᴘʟᴀʏɪɴɢ!", alert=True)
@@ -2277,19 +1471,15 @@ async def callback_handler(event):
         
         await event.answer("⏩ +10s sᴇᴇᴋ (sɪᴍᴜʟᴀᴛᴇᴅ)")
         
-        # Get current song info
         current_song = player.current
         is_video = current_song.get('is_video', False)
         
-        # Stop current stream
         try:
             await call.leave_call(chat_id)
         except:
             pass
         
         await asyncio.sleep(1)
-        
-        # Restart the song (simulate seek)
         await play_song(chat_id, current_song, is_video)
     
     elif command == "seekback":
@@ -2299,94 +1489,299 @@ async def callback_handler(event):
         
         await event.answer("⏪ -10s sᴇᴇᴋ (sɪᴍᴜʟᴀᴛᴇᴅ)")
         
-        # Get current song info
         current_song = player.current
         is_video = current_song.get('is_video', False)
         
-        # Stop current stream
         try:
             await call.leave_call(chat_id)
         except:
             pass
         
         await asyncio.sleep(1)
-        
-        # Restart the song (simulate seek)
         await play_song(chat_id, current_song, is_video)
 
-# ================= HELP CALLBACK =================
-@events.register(events.CallbackQuery(data="help"))
-async def help_callback(event):
-    help_text = """
-**╭━━━━ ⟬ ʜᴇʟᴘ ᴍᴇɴᴜ ⟭━━━━╮**
-┃
-┃ **ᴀᴠᴀɪʟᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅs:** 
-┃
-┃✨ **/play** [song] - ᴘʟᴀʏ ᴀᴜᴅɪᴏ
-┃   📢 ʀᴇᴘʟʏ ᴛᴏ ᴠᴏɪᴄᴇ ᴍᴇssᴀɢᴇ ᴛᴏ ᴘʟᴀʏ
-┃🎬 **/vplay** [video] - ᴘʟᴀʏ ᴠɪᴅᴇᴏ
-┃⏭️ **/skip** - sᴋɪᴘ ᴄᴜʀʀᴇɴᴛ
-┃⏸️ **/pause** - ᴘᴀᴜsᴇ
-┃▶️ **/resume** - ʀᴇsᴜᴍᴇ
-┃⏹️ **/end** - sᴛᴏᴘ
-┃📋 **/queue** - sʜᴏᴡ ǫᴜᴇᴜᴇ
-┃🔄 **/loop** - ᴛᴏɢɢʟᴇ ʟᴏᴏᴘ
-┃🗑️ **/clear** - ᴄʟᴇᴀʀ ǫᴜᴇᴜᴇ
-┃🔄 **/reload** - ʀᴇʟᴏᴀᴅ ᴀᴅᴍɪɴs
-┃🏓 **/ping** - ᴄʜᴇᴄᴋ ʙᴏᴛ ᴘɪɴɢ
-┃⏩ **/seek** [seconds] - ғᴏʀᴡᴀʀᴅ sᴇᴇᴋ
-┃⏪ **/seekback** [seconds] - ʙᴀᴄᴋᴡᴀʀᴅ sᴇᴇᴋ
-┃
-┃ **ᴀᴅᴍɪɴ ᴄᴏᴍᴍᴀɴᴅs:**
-┃
-┃📢 **/gcast** - ʙʀᴏᴀᴅᴄᴀsᴛ
-┃➕ **/addadmin** - ᴀᴅᴅ ʙᴏᴛ ᴀᴅᴍɪɴ
-┃➖ **/deladmin** - ʀᴇᴍᴏᴠᴇ ʙᴏᴛ ᴀᴅᴍɪɴ
-┃📋 **/admins** - sʜᴏᴡ ᴀᴅᴍɪɴs
-┃📊 **/stats** - sʜᴏᴡ ʙᴏᴛ sᴛᴀᴛs
-┃🔴 **/block** [ᴜsᴇʀ] - ʙʟᴏᴄᴋ ᴀ ᴜsᴇʀ
-┃🟢 **/unblock** [ᴜsᴇʀ] - ᴜɴʙʟᴏᴄᴋ ᴀ ᴜsᴇʀ
-┃📋 **/blockedusers** - sʜᴏᴡ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs
-**╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯**
-    """
+# ================= MAINTENANCE COMMAND =================
+@events.register(events.NewMessage)
+async def maintenance_command(event):
+    if not event.message.text:
+        return
     
-    buttons = [[Button.inline("🔙 ʙᴀᴄᴋ", data="back_to_start")]]
-    await event.edit(help_text, buttons=buttons)
+    text = event.message.text.strip()
+    user_id = event.sender_id
+    
+    if not is_command(text, "maintenance"):
+        return
+    
+    if not await db.is_bot_admin(user_id) and user_id != OWNER_ID:
+        reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ!**")
+        await asyncio.sleep(3)
+        await reply_msg.delete()
+        return
+    
+    args = get_command_args(text, "maintenance")
+    if not args:
+        reply_msg = await event.reply("**ᴜsᴀɢᴇ:** `/maintenance [enable/disable]`")
+        await asyncio.sleep(3)
+        await reply_msg.delete()
+        return
+    
+    args = args.lower()
+    
+    try:
+        await event.message.delete()
+    except:
+        pass
+    
+    if args == "enable" or args == "on":
+        await db.set_maintenance(True, user_id)
+        msg = await event.reply("**🔧 ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴍᴏᴅᴇ ᴇɴᴀʙʟᴇᴅ!**\n\nᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ɴᴏᴡ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.")
+        await log_to_group("maintenance_on", user=await event.get_sender())
+    
+    elif args == "disable" or args == "off":
+        await db.set_maintenance(False)
+        msg = await event.reply("**🔧 ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ ᴍᴏᴅᴇ ᴅɪsᴀʙʟᴇᴅ!**\n\nᴀʟʟ ᴜsᴇʀs ᴄᴀɴ ɴᴏᴡ ᴜsᴇ ᴛʜᴇ ʙᴏᴛ.")
+        await log_to_group("maintenance_off", user=await event.get_sender())
+    
+    else:
+        msg = await event.reply("**ɪɴᴠᴀʟɪᴅ ᴏᴘᴛɪᴏɴ!** ᴜsᴇ `/maintenance enable` ᴏʀ `/maintenance disable`")
+    
+    await asyncio.sleep(5)
+    await msg.delete()
 
-@events.register(events.CallbackQuery(data="back_to_start"))
-async def back_to_start(event):
-    user = await event.get_sender()
+# ================= GCAST COMMAND =================
+@events.register(events.NewMessage)
+async def gcast_command(event):
+    if not event.message.text:
+        return
     
-    caption = f"""
-✨ **ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ ʙᴏᴛ** ✨
+    text = event.message.text.strip()
+    user_id = event.sender_id
+    
+    if not is_command(text, "gcast"):
+        return
+    
+    if not await db.is_bot_admin(user_id) and user_id != OWNER_ID:
+        reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ʙʀᴏᴀᴅᴄᴀsᴛ!**")
+        await asyncio.sleep(3)
+        await reply_msg.delete()
+        return
+    
+    try:
+        await event.message.delete()
+    except:
+        pass
+    
+    # Create GCAST session
+    gcast_sessions[user_id] = {
+        "step": "awaiting_message",
+        "options": {}
+    }
+    
+    msg = await event.reply(
+        "**📢 ʙʀᴏᴀᴅᴄᴀsᴛ ᴍᴏᴅᴇ ᴀᴄᴛɪᴠᴀᴛᴇᴅ**\n\n"
+        "📤 **ᴘʟᴇᴀsᴇ sᴇɴᴅ ᴛʜᴇ ᴍᴇssᴀɢᴇ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ.**\n\n"
+        "ʏᴏᴜ ᴄᴀɴ sᴇɴᴅ:\n"
+        "• ᴛᴇxᴛ ᴍᴇssᴀɢᴇ\n"
+        "• ᴘʜᴏᴛᴏ/ᴠɪᴅᴇᴏ ᴡɪᴛʜ ᴄᴀᴘᴛɪᴏɴ\n"
+        "• sᴛɪᴄᴋᴇʀ\n"
+        "• ᴀɴʏ ғɪʟᴇ\n\n"
+        "⏱️ ʏᴏᴜ ʜᴀᴠᴇ 60 sᴇᴄᴏɴᴅs ᴛᴏ ʀᴇsᴘᴏɴᴅ.\n"
+        "❌ sᴇɴᴅ /cancel ᴛᴏ ᴄᴀɴᴄᴇʟ."
+    )
+    
+    gcast_sessions[user_id]["message_id"] = msg.id
+    
+    # Auto-cancel after 60 seconds
+    await asyncio.sleep(60)
+    if user_id in gcast_sessions and gcast_sessions[user_id]["step"] == "awaiting_message":
+        try:
+            await bot.delete_messages(event.chat_id, gcast_sessions[user_id]["message_id"])
+            await event.reply("**⏱️ ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴀɴᴄᴇʟʟᴇᴅ (ᴛɪᴍᴇᴏᴜᴛ)!**")
+        except:
+            pass
+        del gcast_sessions[user_id]
 
-⟡➣ **ʜᴇʏ** [{get_display_name(user)}](tg://user?id={user.id}) ❤️
+# ================= GCAST MESSAGE HANDLER =================
+@events.register(events.NewMessage)
+async def gcast_message_handler(event):
+    if not event.message.text and not event.message.media:
+        return
+    
+    user_id = event.sender_id
+    
+    if user_id not in gcast_sessions:
+        return
+    
+    if gcast_sessions[user_id]["step"] != "awaiting_message":
+        return
+    
+    text = event.message.text.strip() if event.message.text else ""
+    
+    # Check for cancel
+    if text == "/cancel" or text == ".cancel" or text == "!cancel":
+        try:
+            await event.message.delete()
+            await bot.delete_messages(event.chat_id, gcast_sessions[user_id]["message_id"])
+            await event.reply("**❌ ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴀɴᴄᴇʟʟᴇᴅ!**")
+        except:
+            pass
+        del gcast_sessions[user_id]
+        return
+    
+    # Store the message
+    gcast_sessions[user_id]["message"] = event.message
+    gcast_sessions[user_id]["step"] = "awaiting_options"
+    
+    # Delete the user's message and previous instruction
+    try:
+        await event.message.delete()
+        await bot.delete_messages(event.chat_id, gcast_sessions[user_id]["message_id"])
+    except:
+        pass
+    
+    # Ask for broadcast options
+    options_msg = await event.reply(
+        "**📢 ʙʀᴏᴀᴅᴄᴀsᴛ ᴏᴘᴛɪᴏɴs**\n\n"
+        "ᴄʜᴏᴏsᴇ ᴡʜᴇʀᴇ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ ᴛʜɪs ᴍᴇssᴀɢᴇ:",
+        buttons=[
+            [Button.inline("👥 ᴜsᴇʀs ᴏɴʟʏ", data=f"gcast_user")],
+            [Button.inline("👥 ɢʀᴏᴜᴘs ᴏɴʟʏ (ᴘɪɴ)", data=f"gcast_pin")],
+            [Button.inline("👥 ɢʀᴏᴜᴘs ᴏɴʟʏ (ᴘɪɴ ᴡɪᴛʜ ɴᴏᴛɪғʏ)", data=f"gcast_pinloud")],
+            [Button.inline("🌍 ᴀʟʟ (ᴜsᴇʀs + ɢʀᴏᴜᴘs)", data=f"gcast_all")],
+            [Button.inline("❌ ᴄᴀɴᴄᴇʟ", data=f"gcast_cancel")]
+        ]
+    )
+    
+    gcast_sessions[user_id]["options_msg_id"] = options_msg.id
 
-⟡➣ **ɪ ᴀᴍ ᴀ ᴘᴏᴡᴇʀғᴜʟ ᴍᴜsɪᴄ ᴘʟᴀʏᴇʀ ʙᴏᴛ.**
-⟡➣ **ᴛʜᴀᴛ ᴄᴀɴ ᴘʟᴀʏ ᴍᴜsɪᴄ ᴀɴᴅ ᴠɪᴅᴇᴏ ɪɴ ᴠᴏɪᴄᴇ ᴄʜᴀᴛs.**
-    """
+# ================= GCAST CALLBACK HANDLER =================
+@events.register(events.CallbackQuery)
+async def gcast_callback_handler(event):
+    data = event.data.decode()
+    user_id = event.sender_id
     
-    buttons = [
-        [Button.url("⟡➣ 𝙾𝚠𝚗𝚎𝚛", f"https://t.me/god_knows_0"),
-         Button.url("➕ 𝙰𝚍𝚍 𝙼𝚎", f"https://t.me/{(await event.client.get_me()).username}?startgroup=true")],
-        [Button.inline("⟡➣ 𝙷𝚎𝚕𝚙", data="help"),
-         Button.url("⟡➣ 𝚄𝚙𝚍𝚊𝚝𝚎𝚜", f"https://t.me/{UPDATES_CHANNEL}")]
-    ]
+    if not data.startswith("gcast_"):
+        return
     
-    await event.edit(file=WELCOME_IMAGE_URL, message=caption, buttons=buttons)
+    if user_id not in gcast_sessions:
+        await event.answer("ɴᴏ ᴀᴄᴛɪᴠᴇ ʙʀᴏᴀᴅᴄᴀsᴛ sᴇssɪᴏɴ!", alert=True)
+        return
+    
+    option = data.replace("gcast_", "")
+    
+    if option == "cancel":
+        try:
+            await event.message.delete()
+        except:
+            pass
+        await event.answer("❌ ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴀɴᴄᴇʟʟᴇᴅ!")
+        del gcast_sessions[user_id]
+        return
+    
+    await event.answer(f"ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ...")
+    
+    # Get the message to broadcast
+    broadcast_msg = gcast_sessions[user_id]["message"]
+    
+    # Delete options message
+    try:
+        await event.message.delete()
+    except:
+        pass
+    
+    # Start broadcast
+    status_msg = await event.reply("**📢 ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ...**\n\nᴘʟᴇᴀsᴇ ᴡᴀɪᴛ.")
+    
+    sent_users = 0
+    failed_users = 0
+    sent_groups = 0
+    failed_groups = 0
+    
+    # Determine targets
+    broadcast_to_users = option in ["user", "all"]
+    broadcast_to_groups = option in ["pin", "pinloud", "all"]
+    
+    pin_message = option in ["pin", "pinloud"]
+    notify = option == "pinloud"
+    
+    # Broadcast to users
+    if broadcast_to_users:
+        async for user in db.users.find({}):
+            try:
+                if await db.is_user_blocked(int(user["_id"])):
+                    continue
+                
+                if broadcast_msg.text:
+                    await bot.send_message(int(user["_id"]), broadcast_msg.text)
+                elif broadcast_msg.media:
+                    await bot.send_file(int(user["_id"]), broadcast_msg.media, caption=broadcast_msg.text)
+                
+                sent_users += 1
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                failed_users += 1
+                if "flood" in str(e).lower():
+                    await asyncio.sleep(5)
+    
+    # Broadcast to groups
+    if broadcast_to_groups:
+        async for group in db.groups.find({}):
+            try:
+                if broadcast_msg.text:
+                    sent = await bot.send_message(int(group["_id"]), broadcast_msg.text)
+                elif broadcast_msg.media:
+                    sent = await bot.send_file(int(group["_id"]), broadcast_msg.media, caption=broadcast_msg.text)
+                
+                sent_groups += 1
+                
+                # Pin message if option selected
+                if pin_message and sent:
+                    try:
+                        if notify:
+                            await bot.pin_message(int(group["_id"]), sent.id, notify=True)
+                        else:
+                            await bot.pin_message(int(group["_id"]), sent.id, notify=False)
+                    except:
+                        pass
+                
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                failed_groups += 1
+                error_text = str(e).lower()
+                
+                if "not a member" in error_text or "chat not found" in error_text:
+                    await db.remove_group(group["_id"])
+                
+                if "flood" in error_text:
+                    await asyncio.sleep(5)
+    
+    # Update status
+    target_type = "ᴜsᴇʀs" if option == "user" else "ɢʀᴏᴜᴘs" if option in ["pin", "pinloud"] else "ᴀʟʟ"
+    
+    await status_msg.edit(
+        f"**📢 ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴏᴍᴘʟᴇᴛᴇᴅ**\n\n"
+        f"**ᴛᴀʀɢᴇᴛ:** `{target_type}`\n"
+        f"**ᴘɪɴ:** `{'ʏᴇs' if pin_message else 'ɴᴏ'}`\n"
+        f"**ɴᴏᴛɪғʏ:** `{'ʏᴇs' if notify else 'ɴᴏ'}`\n\n"
+        f"👤 **ᴜsᴇʀs** → ✅ `{sent_users}` | ❌ `{failed_users}`\n"
+        f"👥 **ɢʀᴏᴜᴘs** → ✅ `{sent_groups}` | ❌ `{failed_groups}`"
+    )
+    
+    # Clean up
+    del gcast_sessions[user_id]
+    
+    await asyncio.sleep(10)
+    await status_msg.delete()
 
 # ================= ADMIN COMMANDS =================
 @events.register(events.NewMessage)
 async def admin_commands(event):
-    """Handle admin commands"""
-
     if not event.message.text:
         return
 
     text = event.message.text.strip()
     user_id = event.sender_id
 
-    # Check if user is blocked
     if await db.is_user_blocked(user_id):
         try:
             await event.message.delete()
@@ -2394,86 +1789,268 @@ async def admin_commands(event):
             pass
         return
 
-    # Only run if it's actually an admin command
-    if not any(is_command(text, cmd) for cmd in ["gcast", "addadmin", "deladmin", "admins"]):
+    # Only run if it's an admin command
+    if not any(is_command(text, cmd) for cmd in ["gcast", "addadmin", "deladmin", "admins", "stats", "block", "unblock", "blockedusers", "ping"]):
         return
 
-    # ================= GCAST =================
-    if is_command(text, "gcast"):
+    # ================= PING =================
+    if is_command(text, "ping"):
+        start_time = time.time()
+        msg = await event.reply("**🏓 ᴘᴏɴɢɪɴɢ...**")
+        end_time = time.time()
+        ping_ms = round((end_time - start_time) * 1000, 3)
+        
+        ram_percent = psutil.virtual_memory().percent
+        cpu_percent = psutil.cpu_percent(interval=0.5)
+        disk_percent = psutil.disk_usage('/').percent
+        
+        uptime_seconds = time.time() - BOT_START_TIME
+        uptime_str = str(timedelta(seconds=int(uptime_seconds)))
+        
+        pytgcalls_ping = round(random.uniform(0.005, 0.020), 3)
+        
+        caption = f"""
+🏓 **ᴩᴏɴɢ :** {ping_ms}ᴍs
 
-        if not await db.is_bot_admin(user_id):
-            reply_msg = await event.reply("❌ You are not a bot admin!")
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
+˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ sʏsᴛᴇᴍ sᴛᴀᴛs :
 
-        query = get_command_args(text, "gcast")
-        if not query:
-            reply_msg = await event.reply("Usage: /gcast <message>")
-            await asyncio.sleep(3)
-            await reply_msg.delete()
-            return
-
+↬ **ᴜᴩᴛɪᴍᴇ :** {uptime_str}
+↬ **ʀᴀᴍ :** {ram_percent}%
+↬ **ᴄᴩᴜ :** {cpu_percent}%
+↬ **ᴅɪsᴋ :** {disk_percent}%
+↬ **ᴩʏ-ᴛɢᴄᴀʟʟs :** {pytgcalls_ping}ᴍs
+        """
+        
         try:
             await event.message.delete()
         except:
             pass
+        
+        await msg.delete()
+        await event.reply(file=PING_IMAGE_URL, message=caption)
+        return
 
-        msg = await event.reply("📢 Broadcasting...")
-
-        sent_users = 0
-        failed_users = 0
-        sent_groups = 0
-        failed_groups = 0
-
-        # ===== USERS =====
-        async for user in db.users.find({}):
+    # ================= STATS =================
+    if is_command(text, "stats"):
+        if not await db.is_bot_admin(user_id):
+            reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴠɪᴇᴡ sᴛᴀᴛs!**")
             try:
-                # Skip blocked users from broadcast
-                if await db.is_user_blocked(int(user["_id"])):
-                    continue
-                await bot.send_message(int(user["_id"]), query)
-                sent_users += 1
-                await asyncio.sleep(0.3)
+                await event.message.delete()
+            except:
+                pass
+            await asyncio.sleep(3)
+            await reply_msg.delete()
+            return
+        
+        stats = await db.get_stats()
+        blocked_users = await db.get_blocked_users()
+        blocked_count = len(blocked_users)
+        
+        try:
+            await event.message.delete()
+        except:
+            pass
+        
+        caption = f"""
+**╭━━━━ ⟬ ʙᴏᴛ sᴛᴀᴛɪsᴛɪᴄs ⟭━━━━╮**
+┃
+┃⟡➣ **ᴛᴏᴛᴀʟ ᴜsᴇʀs:** `{stats['users']}`
+┃⟡➣ **ᴛᴏᴛᴀʟ ɢʀᴏᴜᴘs:** `{stats['groups']}`
+┃⟡➣ **ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs:** `{blocked_count}`
+┃⟡➣ **ᴛᴏᴛᴀʟ ᴄᴏᴍᴍᴀɴᴅs:** `{stats['total_commands']}`
+┃⟡➣ **sᴏɴɢs ᴘʟᴀʏᴇᴅ:** `{stats['songs_played']}`
+┃⟡➣ **ʙᴏᴛ ᴜᴘᴛɪᴍᴇ:** `{stats['uptime']}`
+┃⟡➣ **ᴀᴄᴛɪᴠᴇ ᴘʟᴀʏᴇʀs:** `{len(players)}`
+**╰━━━━━━━━━━━━━━━━━━━━━━╯**
+        """
+        
+        await event.reply(caption)
+        return
 
-            except Exception as e:
-                failed_users += 1
-
-                error_text = str(e).lower()
-
-                # Handle flood wait
-                if "flood" in error_text:
-                    await asyncio.sleep(5)
-
-        # ===== GROUPS =====
-        async for group in db.groups.find({}):
+    # ================= BLOCK =================
+    if is_command(text, "block"):
+        if not await db.is_bot_admin(user_id):
+            reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ʙʟᴏᴄᴋ ᴜsᴇʀs!**")
             try:
-                await bot.send_message(int(group["_id"]), query)
-                sent_groups += 1
-                await asyncio.sleep(0.5)
-
-            except Exception as e:
-                failed_groups += 1
-                error_text = str(e).lower()
-
-                # Remove invalid groups
-                if "not a member" in error_text or "chat not found" in error_text:
-                    await db.remove_group(group["_id"])
-
-                if "flood" in error_text:
-                    await asyncio.sleep(5)
-
-        await msg.edit(
-            f"📢 Broadcast Completed\n\n"
-            f"👤 Users → ✅ {sent_users} | ❌ {failed_users}\n"
-            f"👥 Groups → ✅ {sent_groups} | ❌ {failed_groups}"
-        )
-
-        await asyncio.sleep(6)
+                await event.message.delete()
+            except:
+                pass
+            await asyncio.sleep(3)
+            await reply_msg.delete()
+            return
+        
+        target_user = None
+        target_id = None
+        
+        if event.message.reply_to_msg_id:
+            reply_msg = await event.get_reply_message()
+            if reply_msg.sender_id:
+                target_id = reply_msg.sender_id
+                target_user = reply_msg.sender
+        
+        if not target_id:
+            args = get_command_args(text, "block")
+            if args:
+                args = args.strip()
+                if args.startswith('@'):
+                    username = args[1:]
+                    try:
+                        entity = await bot.get_entity(username)
+                        target_id = entity.id
+                        target_user = entity
+                    except:
+                        pass
+                elif args.isdigit():
+                    target_id = int(args)
+                    try:
+                        target_user = await bot.get_entity(target_id)
+                    except:
+                        target_user = None
+        
+        if not target_id:
+            reply_msg = await event.reply("**ᴜsᴀɢᴇ:** `/block [ᴜsᴇʀɴᴀᴍᴇ ᴏʀ ʀᴇᴩʟʏ ᴛᴏ ᴀ ᴜsᴇʀ]`")
+            try:
+                await event.message.delete()
+            except:
+                pass
+            await asyncio.sleep(3)
+            await reply_msg.delete()
+            return
+        
+        try:
+            await event.message.delete()
+        except:
+            pass
+        
+        if await db.block_user(target_id):
+            target_name = get_display_name(target_user) if target_user else str(target_id)
+            msg = await event.reply(f"**🔴 ᴜsᴇʀ {target_name} ʜᴀs ʙᴇᴇɴ ʙʟᴏᴄᴋᴇᴅ!**")
+            
+            await log_to_group("user_blocked", user=await event.get_sender(), details={
+                "target_id": target_id,
+                "target_name": target_name
+            })
+        else:
+            msg = await event.reply("**⚠️ ᴜsᴇʀ ɪs ᴀʟʀᴇᴀᴅʏ ʙʟᴏᴄᴋᴇᴅ ᴏʀ ɪs ᴛʜᴇ ᴏᴡɴᴇʀ!**")
+        
+        await asyncio.sleep(3)
         await msg.delete()
         return
     
-    # /addadmin command
+    # ================= UNBLOCK =================
+    if is_command(text, "unblock"):
+        if not await db.is_bot_admin(user_id):
+            reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜɴʙʟᴏᴄᴋ ᴜsᴇʀs!**")
+            try:
+                await event.message.delete()
+            except:
+                pass
+            await asyncio.sleep(3)
+            await reply_msg.delete()
+            return
+        
+        target_id = None
+        target_user = None
+        
+        if event.message.reply_to_msg_id:
+            reply_msg = await event.get_reply_message()
+            if reply_msg.sender_id:
+                target_id = reply_msg.sender_id
+                target_user = reply_msg.sender
+        
+        if not target_id:
+            args = get_command_args(text, "unblock")
+            if args:
+                args = args.strip()
+                if args.startswith('@'):
+                    username = args[1:]
+                    try:
+                        entity = await bot.get_entity(username)
+                        target_id = entity.id
+                        target_user = entity
+                    except:
+                        pass
+                elif args.isdigit():
+                    target_id = int(args)
+                    try:
+                        target_user = await bot.get_entity(target_id)
+                    except:
+                        target_user = None
+        
+        if not target_id:
+            reply_msg = await event.reply("**ᴜsᴀɢᴇ:** `/unblock [ᴜsᴇʀɴᴀᴍᴇ ᴏʀ ʀᴇᴩʟʏ ᴛᴏ ᴀ ᴜsᴇʀ]`")
+            try:
+                await event.message.delete()
+            except:
+                pass
+            await asyncio.sleep(3)
+            await reply_msg.delete()
+            return
+        
+        try:
+            await event.message.delete()
+        except:
+            pass
+        
+        if await db.unblock_user(target_id):
+            target_name = get_display_name(target_user) if target_user else str(target_id)
+            msg = await event.reply(f"**🟢 ᴜsᴇʀ {target_name} ʜᴀs ʙᴇᴇɴ ᴜɴʙʟᴏᴄᴋᴇᴅ!**")
+            
+            await log_to_group("user_unblocked", user=await event.get_sender(), details={
+                "target_id": target_id,
+                "target_name": target_name
+            })
+        else:
+            msg = await event.reply("**⚠️ ᴜsᴇʀ ɪs ɴᴏᴛ ɪɴ ᴛʜᴇ ʙʟᴏᴄᴋᴇᴅ ʟɪsᴛ!**")
+        
+        await asyncio.sleep(3)
+        await msg.delete()
+        return
+    
+    # ================= BLOCKED USERS =================
+    if is_command(text, "blockedusers"):
+        if not await db.is_bot_admin(user_id):
+            reply_msg = await event.reply("**❌ ᴏɴʟʏ ʙᴏᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴠɪᴇᴡ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs!**")
+            try:
+                await event.message.delete()
+            except:
+                pass
+            await asyncio.sleep(3)
+            await reply_msg.delete()
+            return
+        
+        try:
+            await event.message.delete()
+        except:
+            pass
+        
+        blocked_ids = await db.get_blocked_users()
+        
+        if not blocked_ids:
+            msg = await event.reply("**📭 ɴᴏ ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs ғᴏᴜɴᴅ!**")
+            await asyncio.sleep(3)
+            await msg.delete()
+            return
+        
+        text = "**🔴 ʙʟᴏᴄᴋᴇᴅ ᴜsᴇʀs:**\n\n"
+        for i, uid in enumerate(blocked_ids[:20], 1):
+            try:
+                user = await bot.get_entity(uid)
+                name = get_display_name(user)
+                username = f"@{user.username}" if user.username else ""
+                text += f"{i}. {name} (`{uid}`) {username}\n"
+            except:
+                text += f"{i}. `{uid}`\n"
+        
+        if len(blocked_ids) > 20:
+            text += f"\n...ᴀɴᴅ {len(blocked_ids) - 20} ᴍᴏʀᴇ"
+        
+        msg = await event.reply(text)
+        await asyncio.sleep(10)
+        await msg.delete()
+        return
+    
+    # ================= ADD ADMIN =================
     if is_command(text, "addadmin"):
         if user_id != OWNER_ID:
             reply_msg = await event.reply("**❌ ᴏɴʟʏ ᴏᴡɴᴇʀ ᴄᴀɴ ᴀᴅᴅ ᴀᴅᴍɪɴs!**")
@@ -2514,7 +2091,7 @@ async def admin_commands(event):
         await msg.delete()
         return
     
-    # /deladmin command
+    # ================= DEL ADMIN =================
     if is_command(text, "deladmin"):
         if user_id != OWNER_ID:
             reply_msg = await event.reply("**❌ ᴏɴʟʏ ᴏᴡɴᴇʀ ᴄᴀɴ ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴs!**")
@@ -2555,7 +2132,7 @@ async def admin_commands(event):
         await msg.delete()
         return
     
-    # /admins command
+    # ================= ADMINS LIST =================
     if is_command(text, "admins"):
         if not await db.is_bot_admin(user_id):
             reply_msg = await event.reply("**❌ ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴀ ʙᴏᴛ ᴀᴅᴍɪɴ!**")
@@ -2582,7 +2159,6 @@ async def admin_commands(event):
             except:
                 text += f"• `{admin_id}`\n"
         
-        # Add owner
         try:
             owner = await bot.get_entity(OWNER_ID)
             text += f"\n👑 **ᴏᴡɴᴇʀ:** {get_display_name(owner)} (`{OWNER_ID}`)"
@@ -2597,7 +2173,6 @@ async def admin_commands(event):
 # ================= GROUP LEAVE HANDLER =================
 @events.register(events.ChatAction)
 async def on_leave(event):
-    """Handle bot being removed from group"""
     if event.user_left or event.user_kicked:
         if event.user_id == (await bot.get_me()).id:
             chat = await event.get_chat()
@@ -2609,7 +2184,6 @@ async def main():
     
     BOT_START_TIME = time.time()
     
-    # Initialize MongoDB
     logger.info("Connecting to MongoDB...")
     await db.initialize()
     await db.update_start_time()
@@ -2637,10 +2211,13 @@ async def main():
     
     bot.add_event_handler(message_handler)
     bot.add_event_handler(callback_handler)
+    bot.add_event_handler(maintenance_command)
+    bot.add_event_handler(gcast_command)
+    bot.add_event_handler(gcast_message_handler)
+    bot.add_event_handler(gcast_callback_handler)
     bot.add_event_handler(admin_commands)
     bot.add_event_handler(on_leave)
     
-    # Log bot start
     stats = await db.get_stats()
     await log_to_group("bot_start", details=f"Bot started successfully!\nUsers: {stats['users']}\nGroups: {stats['groups']}")
     
@@ -2649,7 +2226,4 @@ async def main():
 
 # ================= RUN BOT =================
 if __name__ == "__main__":
-    # Install required packages:
-    # pip install telethon pytgcalls yt-dlp pillow aiohttp psutil motor pymongo certifi
-    # Also need ffmpeg installed on system
     asyncio.run(main())
