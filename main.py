@@ -1036,7 +1036,7 @@ async def get_help_menu():
          Button.inline("𝙿𝚒𝚗𝚐", data="help_ping"),
          Button.inline("𝚂𝚎𝚎𝚔/𝙻𝚘𝚘𝚙", data="help_seek")],
         [Button.inline("𝙱𝚛𝚘𝚊𝚍𝚌𝚊𝚜𝚝", data="help_broadcast"),
-         Button.inline("𝙱-𝚄𝚜𝚎𝚛𝚜", data="help_busers"),]
+         Button.inline("𝙱-𝚄𝚜𝚎𝚛𝚜", data="help_busers")],
         [Button.inline("๏ 𝙱𝚊𝚌𝚔 ๏", data="back_to_start")]
     ]
     
