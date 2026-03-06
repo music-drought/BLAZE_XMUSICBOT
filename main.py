@@ -38,7 +38,7 @@ BOT_TOKEN = "8748436738:AAFvuEEUKhaSUaPqxqpThwjnAv9dIlDrgbo"
 API_ID = 30191201
 API_HASH = "5c87a8808e935cc3d97958d0bb24ff1f"
 COOKIES_FILE = "cookies.txt"
-ASSISTANT_SESSION = "1BVtsOJgBu2V4c9p1T6YfD_0hnPFM9eN_3m0DNpPp_vN_Z5sRzvLlRyzh_0zEnOWQ1gs57StUOIpEm3FLkn5301U94eRjM1ZxA9WpteYTpxfGXy_GI0p1Sh9jQWO-v_wcw04RS_XcJ2y4MrOQyQP-Khv0pXNvLv_a6s3RGkARbDZytD4SeZLSdNHOfe7RFlfITZKzk0lAcY-EVcdxpF7_ANVVyro68FNFOe4q754yBX9dXak-je0C7mvozpeybl6s8Uc3Xju9MmCkvLMyVXLcVJWe9ioG33AYOuQqeRDMch3Zl116IkP6-GCPj2SAzr2nTGXJTVzra1x_fPEsVEk0maFjtFHsO7Q="
+ASSISTANT_SESSION = "1BJWap1wBuw1FQrUsohWD9PquKs19-CLt56CWeaD3Y2_zbYmxijpu-pFSucHoLnlWdJEzAYF_OAG2rT3wiAnb8wMH8h_kkDBAr-2RFb_KPE0DKX_DN3QKUmi-CROO7UQEMn-gOHd99TEVCyylkUPQdv8SyYY6_iYZWR4ZRk4mvTAve0oaKzPagNeAiT5ghuiVdaGW5D0tIJ-7arsyu92jh4vFK0GCgVLJ-FwZfjt7lR9nbi1wTEsPWliLLFinuaBD7rBHidX9qG3BWr6nx9Pw2js5HuIajZOBoyPu3LixOJ_bSJ5sXqkJlqQTxHtkU1yEsqmtoXVA0AfkUVWoPLQYX3QjgoqHU1A="
 OWNER_ID = 8568245247
 UPDATES_CHANNEL = "ASUNA_MUSIC_UPDATES"  # Bina @ ke
 LOG_GROUP_ID = -1003848994625  # TERI LOG GROUP ID
@@ -1036,8 +1036,8 @@ async def get_help_menu():
          Button.inline("๏ 𝙿𝚒𝚗𝚐", data="help_ping"),
          Button.inline("๏ 𝚂𝚎𝚎𝚔/𝙻𝚘𝚘𝚙", data="help_seek")],
         [Button.inline("๏ 𝙱𝚛𝚘𝚊𝚍𝚌𝚊𝚜𝚝", data="help_broadcast"),
-         Button.inline("๏ 𝙱-𝚄𝚜𝚎𝚛𝚜", data="help_busers"),
-         Button.inline("๏ 𝙱𝚊𝚌𝚔", data="back_to_start")]
+         Button.inline("๏ 𝙱-𝚄𝚜𝚎𝚛𝚜", data="help_busers")],
+        [Button.inline("๏ 𝙱𝚊𝚌𝚔", data="back_to_start")]
     ]
     
     return text, buttons
@@ -1315,12 +1315,12 @@ async def callback_handler(event):
     elif data == "back_to_start":
         user = await event.get_sender()
         caption = f"""
-    ✨ **ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ ʙᴏᴛ** ✨
+✨ **ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ˹𝚨𝛔𝛖𝛎𝛂 ꭙ 𝐌ᴜꜱɪᴄ ♪˼ ʙᴏᴛ** ✨
 
-    ⟡➣ **ʜᴇʏ** [{get_display_name(user)}](tg://user?id={user.id}) ❤️
+⟡➣ **ʜᴇʏ** [{get_display_name(user)}](tg://user?id={user.id}) ❤️
 
-    ⟡➣ **ɪ ᴀᴍ ᴀ ᴘᴏᴡᴇʀғᴜʟ ᴍᴜsɪᴄ ᴘʟᴀʏᴇʀ ʙᴏᴛ.**
-    ⟡➣ **ᴛʜᴀᴛ ᴄᴀɴ ᴘʟᴀʏ ᴍᴜsɪᴄ ᴀɴᴅ ᴠɪᴅᴇᴏ ɪɴ ᴠᴏɪᴄᴇ ᴄʜᴀᴛs.**
+⟡➣ **ɪ ᴀᴍ ᴀ ᴘᴏᴡᴇʀғᴜʟ ᴍᴜsɪᴄ ᴘʟᴀʏᴇʀ ʙᴏᴛ.**
+⟡➣ **ᴛʜᴀᴛ ᴄᴀɴ ᴘʟᴀʏ ᴍᴜsɪᴄ ᴀɴᴅ ᴠɪᴅᴇᴏ ɪɴ ᴠᴏɪᴄᴇ ᴄʜᴀᴛs.**
     """
     
         buttons = [
