@@ -1178,7 +1178,7 @@ async def message_handler(event):
                 pass
             return
 
-        msg = await event.reply("**🔍 ᴘʀᴏᴄᴇssɪɴɢ...**")
+        msg = await event.reply("🔍")
 
         try:
             await event.message.delete()
@@ -1288,7 +1288,7 @@ async def message_handler(event):
                 pass
             return
 
-        msg = await event.reply("**🎬 ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴠɪᴅᴇᴏ...**")
+        msg = await event.reply("🔍")
 
         try:
             await event.message.delete()
