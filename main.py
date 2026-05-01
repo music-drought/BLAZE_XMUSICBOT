@@ -704,7 +704,7 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 async def download_audio(query):
     ydl_opts = {
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "bestaudio/best",
         "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
         "quiet": True,
         "no_warnings": True,
@@ -756,7 +756,7 @@ async def download_audio(query):
 
 async def download_video(query):
     ydl_opts = {
-        "format": "bestvideo[height<=720]+bestaudio/best",
+        "format": "bestvideo[height<=720]+bestaudio/best[ext=mp4]/best",
         "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
         "merge_output_format": "mp4",
         "quiet": True,
