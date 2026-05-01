@@ -710,6 +710,7 @@ async def download_audio(query):
         "no_warnings": True,
         "noplaylist": True,
         "geo_bypass": True,
+        "cookiefile": "cookies.txt",
         "geo_bypass_country": "IN",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -762,6 +763,7 @@ async def download_video(query):
         "no_warnings": True,
         "noplaylist": True,
         "geo_bypass": True,
+        "cookiefile": "cookies.txt",
         "geo_bypass_country": "IN",
     }
 
